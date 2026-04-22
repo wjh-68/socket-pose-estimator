@@ -58,28 +58,42 @@ class SingleFrameEstimator:
         self.K = K.astype(np.float64)
         self.dist = dist.astype(np.float64)
 
+    def compute_reproj_error(self, rvec, tvec, pts2d):
+        """Compute average reprojection error."""
+        proj, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.K, self.dist)
+        proj = proj.reshape(-1, 2)
+        errors = np.linalg.norm(proj - pts2d, axis=1)
+        return float(np.mean(errors))
+
     def solve(self, pts2d):
-        """Solve pose for single frame with BA."""
+        """Solve pose for single frame: PnP + BA, return both with reproj errors."""
         pts2d_arr = np.array(pts2d, dtype=np.float64)
         success, rvec, tvec = cv2.solvePnP(
             self.obj_pts, pts2d_arr, self.K, self.dist,
             flags=cv2.SOLVEPNP_IPPE
         )
         if not success:
-            return None, None
+            return None
+
+        reproj_err_pnp = self.compute_reproj_error(rvec, tvec, pts2d_arr)
 
         # BA optimization
         params = np.concatenate([rvec.flatten(), tvec.flatten()])
-        functor = ReprojectionErrorFunctor(
-            self.obj_pts, [pts2d], self.K, self.dist
-        )
+        functor = ReprojectionErrorFunctor(self.obj_pts, [pts2d], self.K, self.dist)
         result = least_squares(
             functor, params, method='lm',
             ftol=1e-6, xtol=1e-6, max_nfev=100
         )
         rvec_ba = result.x[:3]
         tvec_ba = result.x[3:6]
-        return (rvec_ba, tvec_ba), result.cost
+        reproj_err_ba = self.compute_reproj_error(rvec_ba, tvec_ba, pts2d_arr)
+
+        return {
+            'rvec_pnp': rvec.flatten(), 'tvec_pnp': tvec.flatten(),
+            'rvec_ba': rvec_ba, 'tvec_ba': tvec_ba,
+            'reproj_err_pnp': reproj_err_pnp, 'reproj_err_ba': reproj_err_ba,
+            'cost': result.cost
+        }
 
 
 class SocketPoseEstimator:
@@ -274,10 +288,16 @@ def main():
             continue
 
         pts_img = final_pts + np.array(tl)
-        poses = []
+        poses_pnp = []
+        poses_ba = []
+
+        print(f"\n=== {fname} ===")
+        print(f"{'Trial':<6} {'method':<6} {'rvec_x':>10} {'rvec_y':>10} {'rvec_z':>10} "
+              f"{'tvec_x':>10} {'tvec_y':>10} {'tvec_z':>10} {'reproj_err':>10}")
+        print("-" * 80)
 
         for trial in range(NUM_TRIALS):
-            # Full pipeline: ROI detection -> ellipse detection -> template matching -> BA
+            # Full pipeline: ROI detection -> ellipse detection -> template matching -> PnP + BA
             roi_box = yolo_detect_roi(model, img)
             if roi_box is None:
                 continue
@@ -288,16 +308,26 @@ def main():
             if final_pts is None:
                 continue
             pts_img = final_pts + np.array(tl)
-            (rvec_ba, tvec_ba), cost = estimator.estimate_single(pts_img)
-            if rvec_ba is not None:
-                poses.append(pose_to_vec(rvec_ba, tvec_ba))
-                vec = pose_to_vec(rvec_ba, tvec_ba)
-                print(f"{fname:<30} {trial+1:<6} {vec[0]:>10.4f} {vec[1]:>10.4f} {vec[2]:>10.4f} "
-                      f"{vec[3]:>10.2f} {vec[4]:>10.2f} {vec[5]:>10.2f} {cost:>12.4f}")
 
-        if len(poses) >= 2:
-            rmse = compute_pose_rmse(poses)
-            print(f"{'[RMSE]':<30} {'':<6} {'':<10} {'':<10} {'':<10} {'':<10} {'':<10} {'':<10} {rmse:>12.4f}")
+            result = estimator.estimate_single(pts_img)
+            if result is None:
+                continue
+
+            vec_pnp = pose_to_vec(result['rvec_pnp'], result['tvec_pnp'])
+            vec_ba = pose_to_vec(result['rvec_ba'], result['tvec_ba'])
+            poses_pnp.append(vec_pnp)
+            poses_ba.append(vec_ba)
+
+            print(f"{trial+1:<6} {'PnP':<6} {vec_pnp[0]:>10.4f} {vec_pnp[1]:>10.4f} {vec_pnp[2]:>10.4f} "
+                  f"{vec_pnp[3]:>10.2f} {vec_pnp[4]:>10.2f} {vec_pnp[5]:>10.2f} {result['reproj_err_pnp']:>10.4f}")
+            print(f"{trial+1:<6} {'BA':<6} {vec_ba[0]:>10.4f} {vec_ba[1]:>10.4f} {vec_ba[2]:>10.4f} "
+                  f"{vec_ba[3]:>10.2f} {vec_ba[4]:>10.2f} {vec_ba[5]:>10.2f} {result['reproj_err_ba']:>10.4f}")
+
+        if len(poses_ba) >= 2:
+            rmse_pnp = compute_pose_rmse(poses_pnp)
+            rmse_ba = compute_pose_rmse(poses_ba)
+            print(f"{'RMSE':<6} {'':<6} {'':<10} {'':<10} {'':<10} {'':<10} {'':<10} {'':<10} {rmse_pnp:>10.4f} (PnP)")
+            print(f"{'RMSE':<6} {'':<6} {'':<10} {'':<10} {'':<10} {'':<10} {'':<10} {'':<10} {rmse_ba:>10.4f} (BA)")
         print()
 
 
