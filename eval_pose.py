@@ -277,6 +277,17 @@ def main():
         poses = []
 
         for trial in range(NUM_TRIALS):
+            # Full pipeline: ROI detection -> ellipse detection -> template matching -> BA
+            roi_box = yolo_detect_roi(model, img)
+            if roi_box is None:
+                continue
+            roi = img[int(roi_box[1]):int(roi_box[3]), int(roi_box[0]):int(roi_box[2])]
+            tl = (int(roi_box[0]), int(roi_box[1]))
+            ellipses = detect_ellipses(ed, roi)
+            final_pts, score = estimator.solve(ellipses)
+            if final_pts is None:
+                continue
+            pts_img = final_pts + np.array(tl)
             (rvec_ba, tvec_ba), cost = estimator.estimate_single(pts_img)
             if rvec_ba is not None:
                 poses.append(pose_to_vec(rvec_ba, tvec_ba))
