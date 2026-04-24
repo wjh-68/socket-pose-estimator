@@ -12,12 +12,14 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.optimize import linear_sum_assignment
 from itertools import permutations, combinations
+from scipy.spatial.transform import Rotation
 
 # ============ Config ============
 ROBOT_IP = "192.168.1.20"
 ROBOT_PORT = 30004
 CAMERA_ID = 0
 
+# 相机在机械臂末端坐标系上的位姿
 # Calibration: eye-to-hand (extrinsic)
 eMc = np.array([[-6.9855857e-01,  7.1512282e-01,  2.4804471e-02, -5.1826664e+01],
                 [-7.1555281e-01, -6.9815123e-01, -2.3854841e-02,  5.5274796e+01],
@@ -26,17 +28,18 @@ eMc = np.array([[-6.9855857e-01,  7.1512282e-01,  2.4804471e-02, -5.1826664e+01]
                dtype=np.float32)
 
 # Object pose (world frame, hardcoded for now)
-obj_t = np.array([434.33, -510.15, 523.57])
-obj_euler = np.array([-80.346, -0.32487, 179.95])
-bMo_t = np.eye(4, dtype=np.float32)
-bMo_t[:3, :3] = Rotation.from_euler('xyz', obj_euler, True).as_matrix()
-bMo_t[:3, 3] = obj_t
+# 目标(插座)在 base 坐标系下的位姿，已移动位置，该数据弃用
+# obj_t = np.array([434.33, -510.15, 523.57])
+# obj_euler = np.array([-80.346, -0.32487, 179.95])
+# bMo_t = np.eye(4, dtype=np.float32)
+# bMo_t[:3, :3] = Rotation.from_euler('xyz', obj_euler, True).as_matrix()
+# bMo_t[:3, 3] = obj_t
 
-# Gripper pose
-gripper_pose = np.eye(4, dtype=np.float32)
-gripper_pose[:3, :3] = Rotation.from_euler('xyz', [1.658, 0.806, 0.057]).as_matrix()
-gripper_pose[:3, 3] = np.array([428.38, -231.39, 553.56])
-gMo = np.linalg.inv(gripper_pose) @ bMo_t
+# Gripper pose 夹爪(充电头)在 base 坐标系的位姿，该数据弃用
+# gripper_pose = np.eye(4, dtype=np.float32)
+# gripper_pose[:3, :3] = Rotation.from_euler('xyz', [1.658, 0.806, 0.057]).as_matrix()
+# gripper_pose[:3, 3] = np.array([428.38, -231.39, 553.56])
+# gMo = np.linalg.inv(gripper_pose) @ bMo_t
 
 
 # ============ Core Classes (from eval_pose.py) ============
@@ -328,6 +331,7 @@ def main():
         pts_img = final_pts + np.array(tl)
 
         # Get robot pose
+        # 机械臂末端在 base 坐标系上位姿
         robot_pose, raw_tcp = get_robot_pose(robot_rpc_client, robot_name)
 
         # Camera pose from PnP + BA
@@ -336,6 +340,7 @@ def main():
             continue
 
         # Build camera pose matrix
+        # 目标(插座) 在相机坐标系下的位姿
         cMo = np.eye(4, dtype=np.float64)
         cMo[:3, :3] = Rotation.from_rotvec(result['rvec_pnp']).as_matrix()
         cMo[:3, 3] = result['tvec_pnp'].flatten()
@@ -351,33 +356,38 @@ def main():
         cMo_ba_ = cMo_ba @ oMo
 
         # Compute object pose in robot base frame
+        # 目标(插座) 在 base 坐标系下的位姿
         bMo_pnp = robot_pose @ eMc @ cMo_
         bMo_ba = robot_pose @ eMc @ cMo_ba_
 
-        # Compare with ground truth bMo_t
-        trans_err_pnp = np.linalg.norm(bMo_pnp[:3, 3] - bMo_t[:3, 3])
-        trans_err_ba = np.linalg.norm(bMo_ba[:3, 3] - bMo_t[:3, 3])
+        
+        # Compare with ground truth bMo_t，目标位置调整，该值弃用
+        # trans_err_pnp = np.linalg.norm(bMo_pnp[:3, 3] - bMo_t[:3, 3])
+        # trans_err_ba = np.linalg.norm(bMo_ba[:3, 3] - bMo_t[:3, 3])
 
         # Euler angles comparison
         euler_pnp = Rotation.from_matrix(bMo_pnp[:3, :3]).as_euler('xyz', True)
         euler_ba = Rotation.from_matrix(bMo_ba[:3, :3]).as_euler('xyz', True)
-        euler_gt = Rotation.from_matrix(bMo_t[:3, :3]).as_euler('xyz', True)
-        rot_err_pnp = np.linalg.norm(euler_pnp - euler_gt)
-        rot_err_ba = np.linalg.norm(euler_ba - euler_gt)
+        # euler_gt = Rotation.from_matrix(bMo_t[:3, :3]).as_euler('xyz', True)
+        # rot_err_pnp = np.linalg.norm(euler_pnp - euler_gt)
+        # rot_err_ba = np.linalg.norm(euler_ba - euler_gt)
 
         elapsed = (time.perf_counter_ns() - t0) / 1e6
 
         print(f"\n--- Frame {frame_id} ({elapsed:.1f}ms) ---")
-        print(f"{'GT':<6} {'PnP':<6} {bMo_t[0,3]:>10.2f} {bMo_t[1,3]:>10.2f} {bMo_t[2,3]:>10.2f} "
-              f"{euler_gt[0]:>10.2f} {euler_gt[1]:>10.2f} {euler_gt[2]:>10.2f} {'-':>10}")
+        # 位姿 和 投影误差
+        # print(f"{'GT':<6} {'PnP':<6} {bMo_t[0,3]:>10.2f} {bMo_t[1,3]:>10.2f} {bMo_t[2,3]:>10.2f} "
+            #   f"{euler_gt[0]:>10.2f} {euler_gt[1]:>10.2f} {euler_gt[2]:>10.2f} {'-':>10}")
         print(f"{frame_id:<6} {'PnP':<6} {bMo_pnp[0,3]:>10.2f} {bMo_pnp[1,3]:>10.2f} {bMo_pnp[2,3]:>10.2f} "
               f"{euler_pnp[0]:>10.2f} {euler_pnp[1]:>10.2f} {euler_pnp[2]:>10.2f} {result['reproj_err_pnp']:>10.4f}")
         print(f"{frame_id:<6} {'BA':<6} {bMo_ba[0,3]:>10.2f} {bMo_ba[1,3]:>10.2f} {bMo_ba[2,3]:>10.2f} "
               f"{euler_ba[0]:>10.2f} {euler_ba[1]:>10.2f} {euler_ba[2]:>10.2f} {result['reproj_err_ba']:>10.4f}")
-        print(f"{'Trans_err':<6} {'PnP':<6} {'':<10} {'':<10} {'':<10} {trans_err_pnp:>10.2f} {'':<10} {'':<10} {'':<10}")
-        print(f"{'Trans_err':<6} {'BA':<6} {'':<10} {'':<10} {'':<10} {trans_err_ba:>10.2f} {'':<10} {'':<10} {'':<10}")
-        print(f"{'Rot_err':<6} {'PnP':<6} {'':<10} {'':<10} {'':<10} {rot_err_pnp:>10.2f} {'':<10} {'':<10} {'':<10}")
-        print(f"{'Rot_err':<6} {'BA':<6} {'':<10} {'':<10} {'':<10} {rot_err_ba:>10.2f} {'':<10} {'':<10} {'':<10}")
+
+        # 位姿误差
+        # print(f"{'Trans_err':<6} {'PnP':<6} {'':<10} {'':<10} {'':<10} {trans_err_pnp:>10.2f} {'':<10} {'':<10} {'':<10}")
+        # print(f"{'Trans_err':<6} {'BA':<6} {'':<10} {'':<10} {'':<10} {trans_err_ba:>10.2f} {'':<10} {'':<10} {'':<10}")
+        # print(f"{'Rot_err':<6} {'PnP':<6} {'':<10} {'':<10} {'':<10} {rot_err_pnp:>10.2f} {'':<10} {'':<10} {'':<10}")
+        # print(f"{'Rot_err':<6} {'BA':<6} {'':<10} {'':<10} {'':<10} {rot_err_ba:>10.2f} {'':<10} {'':<10} {'':<10}")
 
         # Visualize
         vis = img.copy()
