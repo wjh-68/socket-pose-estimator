@@ -67,6 +67,19 @@ def yolo_detect_roi(model, img, conf=0.5):
         return None
     return boxes[0]
 
+def compute_ellipse_metrics(e):
+    a = float(e[2])
+    b = float(e[3])
+    ratio = a / b if b != 0 else 999.0
+    size = a + b
+    if a > 0 and b > 0:
+        area = np.pi * a * b
+        perimeter = np.pi * (3 * (a + b) - np.sqrt((3 * a + b) * (a + 3 * b)))
+        circularity = 4 * np.pi * area / (perimeter * perimeter)
+    else:
+        circularity = 0.0
+    return {'ratio': ratio, 'size': size, 'circularity': circularity}
+
 class SocketPoseEstimator:
     def __init__(self):
         self.obj_pts = np.array([
@@ -76,18 +89,32 @@ class SocketPoseEstimator:
         ], dtype=np.float64)
         self.tmp_types = [0, 0, 1, 1, 1, 1, 1]
 
-    def _clean_and_classify(self, ellipses, dist_thresh=10):
+    def _clean_and_classify(self, ellipses, dist_thresh=10, cluster_thresh=80):
         if not ellipses:
             return [], [], []
-        nodes = []
-        used_ellipses = []
-        discarded_ellipses = []
+
+        shape_passed = []
+        shape_rejected = []
         for i, e in enumerate(ellipses):
-            if 0.9 < e[2] / e[3] < 1.1 and e[2] + e[3] < 80:
-                nodes.append({'c': np.array([e[0], e[1]]), 'd': (e[2] + e[3])})
-                used_ellipses.append((i, e))  # 存储椭圆索引和椭圆数据
+            metrics = compute_ellipse_metrics(e)
+            entry = {
+                'idx': i,
+                'ellipse': e,
+                'center': np.array([e[0], e[1]]),
+                'ratio': metrics['ratio'],
+                'size': metrics['size'],
+                'circularity': metrics['circularity'],
+            }
+            if 0.9 < entry['ratio'] < 1.1 and entry['size'] < 80:
+                shape_passed.append(entry)
             else:
-                discarded_ellipses.append((i, e))
+                shape_rejected.append(entry)
+
+        nodes = [
+            {'idxs': [entry['idx']], 'c': entry['center'], 'd': entry['size']}
+            for entry in shape_passed
+        ]
+
         merged = []
         used = [False] * len(nodes)
         for i in range(len(nodes)):
@@ -101,9 +128,80 @@ class SocketPoseEstimator:
                     used[j] = True
             avg_c = np.mean([n['c'] for n in cluster], axis=0)
             max_d = max([n['d'] for n in cluster])
-            merged.append({'p': avg_c, 'size': max_d, 'is_double': len(cluster) >= 2})
+            all_idxs = [idx for n in cluster for idx in n['idxs']]
+            merged.append({'idxs': all_idxs, 'p': avg_c, 'size': max_d, 'is_double': len(cluster) >= 2})
+
         merged = [m for m in merged if 10 < m['size'] < 100]
-        return merged, used_ellipses, discarded_ellipses
+        if not merged:
+            return [], [], shape_rejected + shape_passed
+
+        # 聚类 小插孔和大插孔，舍弃
+        # groups = []
+        # clustered = [False] * len(merged)
+        # for i in range(len(merged)):
+        #     if clustered[i]:
+        #         continue
+        #     group = [i]
+        #     clustered[i] = True
+        #     queue = [i]
+        #     while queue:
+        #         idx = queue.pop()
+        #         for j in range(len(merged)):
+        #             if not clustered[j] and np.linalg.norm(merged[idx]['p'] - merged[j]['p']) < cluster_thresh:
+        #                 clustered[j] = True
+        #                 queue.append(j)
+        #                 group.append(j)
+        #     groups.append(group)
+
+        # best_group = max(groups, key=lambda g: (len(g), sum(merged[i]['size'] for i in g)))
+        kept = []
+        kept_indices = []
+
+        for m in merged:
+            idxs = m['idxs']
+
+            # 取出对应 ellipse entry
+            entries = [e for e in shape_passed if e['idx'] in idxs]
+
+            if len(entries) <= 2:
+                # 1个或2个，直接保留
+                kept.append(m)
+                kept_indices.extend([e['idx'] for e in entries])
+                continue
+
+            # >=3 个，做筛选（关键逻辑）
+            centers = np.array([e['center'] for e in entries])
+
+            # 方法1（推荐）：选两两距离最小的一对
+            min_dist = float('inf')
+            best_pair = None
+
+            for i in range(len(centers)):
+                for j in range(i + 1, len(centers)):
+                    d = np.linalg.norm(centers[i] - centers[j])
+                    if d < min_dist:
+                        min_dist = d
+                        best_pair = (entries[i], entries[j])
+
+            # 保留这两个
+            selected_entries = list(best_pair)
+
+            # 重新构造 merged node（更新 center/size）
+            avg_c = np.mean([e['center'] for e in selected_entries], axis=0)
+            max_d = max([e['size'] for e in selected_entries])
+
+            kept.append({
+                'idxs': [e['idx'] for e in selected_entries],
+                'p': avg_c,
+                'size': max_d,
+                'is_double': True
+            })
+
+            kept_indices.extend([e['idx'] for e in selected_entries])
+
+        used_ellipses = [entry for entry in shape_passed if entry['idx'] in kept_indices]
+        discarded_ellipses = shape_rejected + [entry for entry in shape_passed if entry['idx'] not in kept_indices]
+        return kept, used_ellipses, discarded_ellipses
 
     def _gap_method_threshold(self, candidates):
         candidates.sort(key=lambda x: x['size'])
@@ -146,13 +244,13 @@ def draw_initial_ellipses(roi, ellipses, title="Initial Ellipse Detection"):
             center = (int(e[0]), int(e[1]))
             radius = int(e[3])
             cv2.circle(vis, center, radius, (255, 0, 0), 2)
-            cv2.putText(vis, f"{i}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+            cv2.putText(vis, f"{i}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         else:  # Ellipse
             center = (int(e[0]), int(e[1]))
             axes = (int(e[2]), int(e[3]))
             angle = int(e[4]) if len(e) > 4 else 0
             cv2.ellipse(vis, center, axes, angle, 0, 360, (255, 0, 0), 2)
-            cv2.putText(vis, f"{i}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+            cv2.putText(vis, f"{i}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
     cv2.putText(vis, title, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     return vis
 
@@ -173,21 +271,25 @@ def draw_used_ellipses(roi, ellipses, used_ellipses, discarded_ellipses, title="
             cv2.ellipse(vis, center, axes, angle, 0, 360, (128, 128, 128), 1)
     
     # Draw used ellipses in green
-    for idx, e in used_ellipses:
+    for entry in used_ellipses:
+        idx = entry['idx']
+        e = entry['ellipse']
         if e[2] == 0:  # Circle
             center = (int(e[0]), int(e[1]))
             radius = int(e[3])
             cv2.circle(vis, center, radius, (0, 255, 0), 2)
-            cv2.putText(vis, f"U{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            cv2.putText(vis, f"U{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         else:  # Ellipse
             center = (int(e[0]), int(e[1]))
             axes = (int(e[2]), int(e[3]))
             angle = int(e[4]) if len(e) > 4 else 0
             cv2.ellipse(vis, center, axes, angle, 0, 360, (0, 255, 0), 2)
-            cv2.putText(vis, f"U{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            cv2.putText(vis, f"U{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
     
     # Draw discarded ellipses in red
-    for idx, e in discarded_ellipses:
+    for entry in discarded_ellipses:
+        idx = entry['idx']
+        e = entry['ellipse']
         if e[2] == 0:  # Circle
             center = (int(e[0]), int(e[1]))
             radius = int(e[3])
@@ -204,6 +306,29 @@ def draw_used_ellipses(roi, ellipses, used_ellipses, discarded_ellipses, title="
     cv2.putText(vis, f"Used: {len(used_ellipses)} | Discarded: {len(discarded_ellipses)}", (10, 60), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
     return vis
+
+def format_ellipse_stats(entry):
+    e = entry['ellipse']
+    center = entry['center']
+    return (f"idx={entry['idx']:02d} center=({center[0]:.1f},{center[1]:.1f}) "
+            f"ratio={entry['ratio']:.3f} size={entry['size']:.1f} "
+            f"circ={entry['circularity']:.3f}")
+
+
+def print_and_save_ellipse_stats(frame_dir, used_ellipses, discarded_ellipses):
+    lines = ["Used ellipses:"]
+    for entry in used_ellipses:
+        lines.append(format_ellipse_stats(entry))
+    lines.append("")
+    lines.append("Discarded ellipses:")
+    for entry in discarded_ellipses:
+        lines.append(format_ellipse_stats(entry))
+    text = "\n".join(lines)
+    print(text)
+    with open(os.path.join(frame_dir, "05_used_discarded_stats.txt"), "w", encoding="utf-8") as f:
+        f.write(text)
+    return text
+
 
 def draw_cleaned_candidates(roi, candidates, title="After clean_and_classify"):
     """Draw candidates after clean_and_classify"""
@@ -307,6 +432,7 @@ def main():
         candidates, used_ellipses, discarded_ellipses = estimator._clean_and_classify(ellipses)
         vis5 = draw_used_ellipses(roi, ellipses, used_ellipses, discarded_ellipses)
         cv2.imwrite(os.path.join(frame_dir, "05_used_discarded_ellipses.png"), vis5)
+        print_and_save_ellipse_stats(frame_dir, used_ellipses, discarded_ellipses)
 
         # Step 6: After clean_and_classify
         vis6 = draw_cleaned_candidates(roi, candidates)
