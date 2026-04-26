@@ -4,6 +4,7 @@ Detection Pipeline Visualization Script
 Visualizes each step of the detection pipeline for testing algorithm effectiveness.
 - YOLO ROI detection
 - Initial ellipse detection
+- Used vs discarded ellipses in clean_and_classify
 - clean_and_classify filtered ellipses
 - gap_method_threshold classified ellipses
 """
@@ -77,11 +78,16 @@ class SocketPoseEstimator:
 
     def _clean_and_classify(self, ellipses, dist_thresh=10):
         if not ellipses:
-            return []
+            return [], [], []
         nodes = []
-        for e in ellipses:
+        used_ellipses = []
+        discarded_ellipses = []
+        for i, e in enumerate(ellipses):
             if 0.9 < e[2] / e[3] < 1.1 and e[2] + e[3] < 80:
                 nodes.append({'c': np.array([e[0], e[1]]), 'd': (e[2] + e[3])})
+                used_ellipses.append((i, e))  # 存储椭圆索引和椭圆数据
+            else:
+                discarded_ellipses.append((i, e))
         merged = []
         used = [False] * len(nodes)
         for i in range(len(nodes)):
@@ -97,7 +103,7 @@ class SocketPoseEstimator:
             max_d = max([n['d'] for n in cluster])
             merged.append({'p': avg_c, 'size': max_d, 'is_double': len(cluster) >= 2})
         merged = [m for m in merged if 10 < m['size'] < 100]
-        return merged
+        return merged, used_ellipses, discarded_ellipses
 
     def _gap_method_threshold(self, candidates):
         candidates.sort(key=lambda x: x['size'])
@@ -148,6 +154,55 @@ def draw_initial_ellipses(roi, ellipses, title="Initial Ellipse Detection"):
             cv2.ellipse(vis, center, axes, angle, 0, 360, (255, 0, 0), 2)
             cv2.putText(vis, f"{i}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
     cv2.putText(vis, title, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    return vis
+
+def draw_used_ellipses(roi, ellipses, used_ellipses, discarded_ellipses, title="Used vs Discarded Ellipses"):
+    """Draw ellipses showing which ones are used (green) and discarded (red)"""
+    vis = roi.copy()
+    
+    # Draw all ellipses first with gray
+    for i, e in enumerate(ellipses):
+        if e[2] == 0:  # Circle
+            center = (int(e[0]), int(e[1]))
+            radius = int(e[3])
+            cv2.circle(vis, center, radius, (128, 128, 128), 1)
+        else:  # Ellipse
+            center = (int(e[0]), int(e[1]))
+            axes = (int(e[2]), int(e[3]))
+            angle = int(e[4]) if len(e) > 4 else 0
+            cv2.ellipse(vis, center, axes, angle, 0, 360, (128, 128, 128), 1)
+    
+    # Draw used ellipses in green
+    for idx, e in used_ellipses:
+        if e[2] == 0:  # Circle
+            center = (int(e[0]), int(e[1]))
+            radius = int(e[3])
+            cv2.circle(vis, center, radius, (0, 255, 0), 2)
+            cv2.putText(vis, f"U{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        else:  # Ellipse
+            center = (int(e[0]), int(e[1]))
+            axes = (int(e[2]), int(e[3]))
+            angle = int(e[4]) if len(e) > 4 else 0
+            cv2.ellipse(vis, center, axes, angle, 0, 360, (0, 255, 0), 2)
+            cv2.putText(vis, f"U{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+    
+    # Draw discarded ellipses in red
+    for idx, e in discarded_ellipses:
+        if e[2] == 0:  # Circle
+            center = (int(e[0]), int(e[1]))
+            radius = int(e[3])
+            cv2.circle(vis, center, radius, (0, 0, 255), 2)
+            cv2.putText(vis, f"D{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        else:  # Ellipse
+            center = (int(e[0]), int(e[1]))
+            axes = (int(e[2]), int(e[3]))
+            angle = int(e[4]) if len(e) > 4 else 0
+            cv2.ellipse(vis, center, axes, angle, 0, 360, (0, 0, 255), 2)
+            cv2.putText(vis, f"D{idx}", center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    
+    cv2.putText(vis, title, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv2.putText(vis, f"Used: {len(used_ellipses)} | Discarded: {len(discarded_ellipses)}", (10, 60), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
     return vis
 
 def draw_cleaned_candidates(roi, candidates, title="After clean_and_classify"):
@@ -248,15 +303,19 @@ def main():
         vis4 = draw_initial_ellipses(roi, ellipses)
         cv2.imwrite(os.path.join(frame_dir, "04_initial_ellipses.png"), vis4)
 
-        # Step 5: After clean_and_classify
-        candidates = estimator._clean_and_classify(ellipses)
-        vis5 = draw_cleaned_candidates(roi, candidates)
-        cv2.imwrite(os.path.join(frame_dir, "05_cleaned_candidates.png"), vis5)
+        # Step 5: Used vs Discarded ellipses in clean_and_classify
+        candidates, used_ellipses, discarded_ellipses = estimator._clean_and_classify(ellipses)
+        vis5 = draw_used_ellipses(roi, ellipses, used_ellipses, discarded_ellipses)
+        cv2.imwrite(os.path.join(frame_dir, "05_used_discarded_ellipses.png"), vis5)
 
-        # Step 6: After gap_method_threshold
+        # Step 6: After clean_and_classify
+        vis6 = draw_cleaned_candidates(roi, candidates)
+        cv2.imwrite(os.path.join(frame_dir, "06_cleaned_candidates.png"), vis6)
+
+        # Step 7: After gap_method_threshold
         estimator._gap_method_threshold(candidates)
-        vis6 = draw_classified_candidates(roi, candidates)
-        cv2.imwrite(os.path.join(frame_dir, "06_classified_candidates.png"), vis6)
+        vis7 = draw_classified_candidates(roi, candidates)
+        cv2.imwrite(os.path.join(frame_dir, "07_classified_candidates.png"), vis7)
 
         print(f"Saved visualization for frame {frame_id}")
 
