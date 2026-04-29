@@ -3,7 +3,7 @@ import time
 import cv2
 import numpy as np
 # from tomlkit import inline_table
-
+from scipy.spatial.transform import Rotation
 
 class SocketDetectorPostProcessor:
     def __init__(self):
@@ -1212,6 +1212,56 @@ class RobustSocketMatcher:
         return inliers, proj
 
 
+def filter_concentric_ellipses(ellipse_list, dist_threshold=8.0):
+    """
+    针对字典列表进行同心圆筛选
+    输入示例: [{'p': (100, 105), 'd': 20.5}, ...]
+    返回示例: [{'p': (100.2, 105.1), 'd': 21.0}, ...]
+    """
+    if len(ellipse_list) < 2:
+        return ellipse_list
+
+    # 1. 提取坐标和直径到 numpy 数组便于计算
+    pts = np.array([item['c'] for item in ellipse_list])
+    diams = np.array([item['d'] for item in ellipse_list])
+    n = len(pts)
+    
+    # 2. 计算距离矩阵
+    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]
+    dist_matrix = np.linalg.norm(diff, axis=2)
+    np.fill_diagonal(dist_matrix, np.inf) # 排除自身
+    
+    final_ellipses = []
+    used_indices = set()
+
+    for i in range(n):
+        if i in used_indices:
+            continue
+            
+        # 3. 找到点 i 的最近邻 j
+        j = np.argmin(dist_matrix[i])
+        min_dist = dist_matrix[i, j]
+        
+        # 4. 相互最近邻逻辑 (Mutual Nearest Neighbor)
+        if min_dist < dist_threshold:
+            if np.argmin(dist_matrix[j]) == i:
+                # 命中内外环点对，计算合并后的属性
+                merged_p = tuple((pts[i] + pts[j]) / 2.0)
+                # 直径通常取平均值，或者取较大值（外环）取决于你的应用
+                # merged_d = float((diams[i] + diams[j]) / 2.0)
+                merged_d = max(diams[i], diams[j])
+                
+                final_ellipses.append({
+                    'c': merged_p,
+                    'd': merged_d
+                })
+                
+                used_indices.add(i)
+                used_indices.add(j)
+        
+    # 注意：这里默认丢弃了所有无法成对的“孤立环”（干扰项）
+    return final_ellipses
+
 class UltimateSocketMatcher:
     def __init__(self):
         # 模板定义
@@ -1226,12 +1276,14 @@ class UltimateSocketMatcher:
             [-8.0, -13.9, 0.0], [8.0, -13.9, 0.0]  # L2, L3
         ], dtype=np.float32)
         self.tmp_types = [0, 0, 1, 1, 1, 1, 1]
-
+        # self.r_idx = None
+        # self.c_idx = None
         self.K =     np.array([[1015.445938660267,0.,638.51741890470555],[0.,1015.445938660267,386.838616473841],[0.,0.,1.]])
-        print(f'cameraMatrix:',self.K)
+        # self.candidates = None
+        # print(f'cameraMatrix:',self.K)
         # distCoeffs = np.array([0.11753195467413819,-0.19301774104640848,0.00016793575097772418,-.00061144051421409198,0.072260521199194336])
         self.dist = np.array([0.11753195467413819,-0.19301774104640848,0.00016793575097772418,-.00061144051421409198,0.072260521199194336])
-    def _clean_and_classify(self, ellipses, dist_thresh=10):
+    def _clean_and_classify(self, ellipses, d=400,dist_thresh=15):
         """
         合并同心圆：将中心距离小于阈值的椭圆归为一个物理孔
         """
@@ -1241,8 +1293,9 @@ class UltimateSocketMatcher:
         nodes = []
         for e in ellipses:
             # e: (cx, cy, a, b, angle)
-            if(0.9<e[2]/e[3]<1.1 and e[2]+e[3]<80) :
-                nodes.append({'c': np.array([e[0], e[1]]), 'd': (e[2] + e[3])})
+            s = 0.15-(d-150)/720/2
+            if(1-s<e[2]/e[3]<1+s and e[2]+e[3]<d/2) :
+                nodes.append({'c': np.array([e[0], e[1]]), 'd': (e[2] + e[3]),'r': min(e[2:4])/max(e[2:4]),'a':e[2],'b':e[3]})
 
         merged = []
         used = [False] * len(nodes)
@@ -1264,23 +1317,38 @@ class UltimateSocketMatcher:
             avg_c = np.mean([n['c'] for n in cluster], axis=0)
             max_d = max([n['d'] for n in cluster])
             is_double = len(cluster) >= 2  # 是否具有内外圈结构
-
-            merged.append({'p': avg_c, 'size': max_d, 'is_double': is_double})
+            
+            ratio_list = [n['r'] for n in cluster]
+            avg = np.mean(ratio_list)
+            # if avg < 1:
+            #     max_index = np.argmax(ratio_list)
+            #     avg_c = cluster[max_index]['c']
+            # if is_double:
+            if len(cluster)>2:
+                    filter_dict = filter_concentric_ellipses(cluster)
+                    # sort_cluster = sorted(cluster, key=lambda x: x['d'])
+                    avg_c = filter_dict[0]['c']
+                    max_d = filter_dict[0]['d']
+            merged.append({'p': avg_c, 'size': max_d, 'is_double': is_double,'clusters':cluster})
 
         # 3. 按尺寸再次过滤明显非孔物体
         # 假设小孔外径在图像中至少有一定像素宽度
-        merged = [m for m in merged if m['size'] > 10 and m['size']< 100]
+        # merged = [m for m in merged if m['size'] > 20 ]
         return merged
-    def solve(self, raw_ellipses):
+    def solve(self, raw_ellipses,rect):#rect tl x,y ,w,h
         # 1. 预处理：合并同心圆 + 间隙法分类 (Gap Method)
-        candidates = self._clean_and_classify(raw_ellipses)
-        if len(candidates) < 4: return None, 0
-        print('candidate points: ',candidates)
+        candidates = self._clean_and_classify(raw_ellipses,min(rect[2:]),10)
+        if len(candidates) < 7: return None, 0,None
+        # print('candidate points: ',candidates)
+
+        centers = np.array([ca['p'] for ca in candidates])
 
         # 第二步：基于尺寸初步分类 (大小孔)
         # 根据你提供的物理参数：大孔显著大于小孔
         candidates.sort(key=lambda x: x['size'])
         sizes = [c['size'] for c in candidates]
+
+
 
         # 2. 计算相邻两个点之间的尺寸增长率
         gaps = []
@@ -1308,6 +1376,9 @@ class UltimateSocketMatcher:
             types = tuple(sorted([self.tmp_types[i] for i in indices]))
             tmp_combos.append({'idx': indices, 'types': types})
 
+        
+
+
         # 3. 遍历检测点的 4 点组合
         det_indices = list(range(len(candidates)))
         for d_idx_tuple in combinations(det_indices, 4):
@@ -1316,16 +1387,16 @@ class UltimateSocketMatcher:
 
             # 4. 类型匹配：只尝试类型分布一致的模板组合
             for t_combo in tmp_combos:
-                # if t_combo['types'] != d_types_signature:
-                #     continue
+                if t_combo['types'] != d_types_signature:
+                    continue
 
                 # 5. 确定了 4 对 4，开始排列检测点以对齐模板类型
                 src_pts = self.obj_pts[list(t_combo['idx'])][:,:2]
                 src_types = [self.tmp_types[i] for i in t_combo['idx']]
                 src_area_sign = get_signed_area(src_pts)
                 for p_d_subset in permutations(d_subset):
-                    # if [d['t'] for d in p_d_subset] != src_types:
-                    #     continue
+                    if [d['t'] for d in p_d_subset] != src_types:
+                        continue
 
                     dst_pts = np.array([d['p'] for d in p_d_subset], dtype=np.float32)
 
@@ -1344,12 +1415,38 @@ class UltimateSocketMatcher:
                     # 7. 全局一致性验证
                     score, proj = self.evaluate_refined(H, self.obj_pts[:,:2], candidates)
                     if score > max_score:
-                        print(f'score:{score},det_sign:{det_sign}, H:{H},det_pts:{dst_pts},src_idx:{t_combo}')
+                        # print(f'score:{score},det_sign:{det_sign}, H:{H},det_pts:{dst_pts},src_idx:{t_combo}')
                         max_score = score
                         best_H = H
                         final_res = proj
-                        # if score == 7: return proj, 7
-        return (final_res, max_score) if best_H is not None else (None, 0)
+
+                    # if score == 7: return proj, 7
+        
+
+        # 2. 构建距离矩阵 (N_template x M_candidates)
+        # 计算每一对点之间的欧氏距离
+        diff = final_res[:, np.newaxis, :] - centers[np.newaxis, :, :]
+        dist_matrix = np.linalg.norm(diff, axis=2)
+
+        # 3. 使用匈牙利算法求解最优一比一匹配
+        row_ind, col_ind = linear_sum_assignment(dist_matrix)
+        # self.r_idx = row_ind
+        # self.c_idx = col_ind
+
+        # 4. 统计有效匹配（在距离阈值内）
+        valid_errors = []
+        matched_indices = []
+
+        for r, c in zip(row_ind, col_ind):
+            d = dist_matrix[r, c]
+            if d < 20:
+                valid_errors.append(d)
+                matched_indices.append((r, c))  # 模板索引 r 匹配到 检测索引 c
+        # self.r_idx = [x[0] for x in matched_indices]
+        c_idx = [x[1] for x in matched_indices]
+        # self.candidates = candidates[self.c_idx]
+
+        return (final_res, max_score,centers[c_idx]+np.array(rect[:2])) if best_H is not None else (None, 0,None)
 
     def estimate_pose(self, p_img, tl):
         """
@@ -1369,10 +1466,14 @@ class UltimateSocketMatcher:
         p_img = np.array(p_img, dtype=np.float32)
         if tl is not None:
             p_img +=np.array(tl)
+        p_img = p_img
+        # print(f'points pnp:{p_img}')
         # 使用迭代法或 SQPnP (如果有的话) 求解
         # rvec: 旋转向量, tvec: 平移向量
-        success, rvec, tvec = cv2.solvePnP(self.obj_pts, p_img, self.K, self.dist, flags=cv2.SOLVEPNP_ITERATIVE)
-
+        success, rvec, tvec = cv2.solvePnP(self.obj_pts[self.r_idx], p_img, self.K, self.dist, flags=cv2.SOLVEPNP_ITERATIVE)
+        # print('obj points: ',self.obj_pts[self.r_idx])
+        # success,rvec,tvec,conf = cv2.solvePnPRansac(self.obj_pts, p_img, self.K, self.dist)
+        # print(f'conf:{conf}')
         if success:
             # 计算重投影验证误差
             proj_back, _ = cv2.projectPoints(self.obj_pts, rvec, tvec, self.K, self.dist)
@@ -1405,6 +1506,8 @@ class UltimateSocketMatcher:
 
         # 3. 使用匈牙利算法求解最优一比一匹配
         row_ind, col_ind = linear_sum_assignment(dist_matrix)
+        self.r_idx = row_ind
+        self.c_idx = col_ind
 
         # 4. 统计有效匹配（在距离阈值内）
         valid_errors = []
@@ -1465,6 +1568,9 @@ def minimum_of_directional_tophat_bottomhat(im_np, size, method='tophat'):  # me
 # from Devernay import DevernayEdges
 from PIL import Image
 # from __future__ import division
+import cv2
+# from matplotlib import pyplot as plt
+import numpy as np
 # from pyransac.ransac import RansacFeature
 # from pyransac.features import Circle
 
@@ -1479,6 +1585,9 @@ def draw_ellipse(img,ellipses):
         #     color = (0, 255, 0)
         cv2.ellipse(vis, center, axes, angle, 0, 360, color, 1, cv2.LINE_AA)
     return vis
+
+def get_ellipseAAMED(color_roi):
+    gray = cv2.cvtColor(color_roi, cv2.COLOR_BGR2GRAY)
 
 def get_ellipse(ed,color_roi):
     gray = cv2.cvtColor(color_roi, cv2.COLOR_BGR2GRAY)
@@ -1547,6 +1656,81 @@ def postprocess_ed(circles, gray):
         # cv2.waitKey(0)
 
 
+
+def refine_ellipse_with_direction_constraint(image, rough_res, mask_scale=0.02, angle_threshold=15):
+    """
+    带方向约束的亚像素级椭圆优化
+    :param image: 灰度原图
+    :param rough_res: 粗检结果 ((cx, cy), (a, b), angle)
+    :param mask_scale: 掩模宽度占图像短边的比例
+    :param angle_threshold: 允许的方向偏差角度 (度)
+    """
+    (cx, cy), (ma, mb), angle = rough_res
+    h, w = image.shape
+    
+    # 1. 动态计算 Mask 宽度
+    mask_width = int(min(w, h) * mask_scale)
+    mask_width = max(5, mask_width) # 至少保留5个像素宽度
+    
+    # 2. 生成带状 Mask
+    mask = np.zeros_like(image)
+    inner_axes = (max(1, int(ma/2 - mask_width)), max(1, int(mb/2 - mask_width)))
+    outer_axes = (int(ma/2 + mask_width), int(mb/2 + mask_width))
+    cv2.ellipse(mask, (int(cx), int(cy)), outer_axes, angle, 0, 360, 255, -1)
+    cv2.ellipse(mask, (int(cx), int(cy)), inner_axes, angle, 0, 360, 0, -1)
+
+    # 3. 计算梯度场
+    grad_x = cv2.Sobel(image, cv2.CV_32F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(image, cv2.CV_32F, 0, 1, ksize=3)
+    
+    # 4. 提取 Mask 内的边缘点
+    edges = cv2.Canny(cv2.bitwise_and(image, image, mask=mask), 50, 150)
+    y_coords, x_coords = np.where(edges > 0)
+    
+    if len(x_coords) < 10:
+        return None
+
+    # 5. 方向约束过滤
+    valid_points = []
+    threshold_rad = np.deg2rad(angle_threshold)
+    
+    for x, y in zip(x_coords, y_coords):
+        # 径向向量 (从中心指向点)
+        vx_radial = x - cx
+        vy_radial = y - cy
+        
+        # 梯度向量
+        vx_grad = grad_x[y, x]
+        vy_grad = grad_y[y, x]
+        
+        # 计算点积和模长
+        mag_radial = np.sqrt(vx_radial**2 + vy_radial**2)
+        mag_grad = np.sqrt(vx_grad**2 + vy_grad**2)
+        
+        if mag_grad < 1e-3: continue # 剔除无梯度点
+        
+        cos_theta = abs(vx_radial * vx_grad + vy_radial * vy_grad) / (mag_radial * mag_grad)
+        cos_theta = np.clip(cos_theta, -1.0, 1.0)
+        
+        # 如果梯度方向与径向方向一致 (0度或180度附近)
+        if np.arccos(cos_theta) < threshold_rad:
+            valid_points.append([x, y])
+
+    valid_points = np.array(valid_points, dtype=np.float32)
+
+    # 6. 最终拟合 (使用更鲁棒的拟合方法)
+    if len(valid_points) >= 5:
+        # 使用 fitEllipseDirect 在工业测量中通常比标准 fitEllipse 更稳定
+        refined_ellipse = cv2.fitEllipseDirect(valid_points)
+        cv2.ellipse(image,np.array(refined_ellipse[:2]).astype(np.uint16),(np.array(refined_ellipse[2:4])/2).astype(np.uint16),int(refined_ellipse[4]),0,360,(0,255,0))
+        cv2.imshow('refine:',image)
+        cv2.waitKey(0)
+        return refined_ellipse
+    
+    return None
+
+import pycylinderedsf as pyced
+
 if __name__=='__main__':
     from scipy import stats
 
@@ -1559,48 +1743,68 @@ if __name__=='__main__':
     Params.GradientThresholdValue = 20
     ed.setParams(Params)
     n = 1
-    # IMG_DIR = "20260408"
-    IMG_DIR = "../dataset/images"
+    IMG_DIR = "dataset/save_data4"
     import os,json
 
-    for fname in os.listdir(IMG_DIR):
+    # for cnt, fname in enumerate(os.listdir(IMG_DIR)):
+    for cnt, fname in enumerate(['2026-04-21_11_33_28_074.png']):
+
+        if cnt>3:
+            break
         if not fname.endswith((".jpg", ".png")):
             continue
         print(f'fnname:{fname}')
         img_path = os.path.join(IMG_DIR, fname)
+        ann_path = os.path.join(IMG_DIR, fname.replace(".jpg", ".json").replace(".png", ".json"))
         image = cv2.imread(img_path)
-        tl, tr, br, bl = [0,0],[image.shape[1],0],[image.shape[1],image.shape[0]],[0,image.shape[0]]
-        rect = image[int(tl[1]):int(br[1]), int(tl[0]):int(tr[0]), :]
-        rect = image
+        # if i > 50:
+        #     break
+        # with open(ann_path, "r") as f:
+        #     ann = json.load(f)
+        # for shape in ann["shapes"]:
+            # pts = shape["points"]
+        tl = [     int(593.58),      int(279.63)]
+        br = [int(801.5)  ,       int(471)]
+        # tl, tr, br, bl = [0,0],[image.shape[1],0],[image.shape[1],image.shape[0]],[0,image.shape[0]]
+        rect = image[int(tl[1]):int(br[1]), int(tl[0]):int(br[0]), :]
+        # rect = image
         color_ = rect.copy()
         gray = cv2.cvtColor(color_, cv2.COLOR_BGR2GRAY)
         # img_ = Image.fromarray(gray)
 
         # np1,np2 = minimum_of_directional_tophat_bottomhat(color_,15)
-        ed.detectEdges(gray)
+        # ed.detectEdges(gray)
+        detector = pyced.CED(color_)
+        detector.run_CED()
+        rotRects = detector.getEllipsesAfterCluster()
+        ellipses_ = []
+        for e in rotRects:
+            ellipses_.append((*e.center,*e.size,e.angle))
+            cv2.ellipse(color_, np.array(e.center,dtype=np.uint16), (np.array(e.size)/2).astype(np.uint16), e.angle, 0, 360, (0,255,0), 1, cv2.LINE_AA)
         cv2.imshow('gray',gray)
-        ellipses = ed.detectEllipses()
-        if ellipses is not None:
-            circles = []
-            ellipses_ = []
-            for i in range(len(ellipses)):
-                center = (int(ellipses[i][0][0]), int(ellipses[i][0][1]))
-                axes = (int(ellipses[i][0][2]) + int(ellipses[i][0][3]), int(ellipses[i][0][2]) + int(ellipses[i][0][4]))
-                angle = ellipses[i][0][5]
-                color = (0, 0, 255)
-                if ellipses[i][0][2] == 0:
-                    color = (0, 255, 0)
-                    ellipses_.append([ellipses[i][0][0],ellipses[i][0][1],ellipses[i][0][3],ellipses[i][0][4],ellipses[i][0][5]])
-                else:
-                    ellipses_.append((ellipses[i][0][0], ellipses[i][0][1], ellipses[i][0][2],ellipses[i][0][2],0))
-                cv2.ellipse(color_, center, axes, angle, 0, 360, color, 1, cv2.LINE_AA)
-
+        # ellipses = ed.detectEllipses()
+        if ellipses_ is not None:  # Check if circles and ellipses have been found and only then iterate over these and add them to the image
+        #     circles = []
+        #     ellipses_ = []
+        #     for i in range(len(ellipses)):
+        #         center = (int(ellipses[i][0][0]), int(ellipses[i][0][1]))
+        #         axes = (int(ellipses[i][0][2]) + int(ellipses[i][0][3]), int(ellipses[i][0][2]) + int(ellipses[i][0][4]))
+        #         angle = ellipses[i][0][5]
+        #         color = (0, 0, 255)
+        #         if ellipses[i][0][2] == 0:
+        #             color = (0, 255, 0)
+        #             ellipses_.append([ellipses[i][0][0],ellipses[i][0][1],ellipses[i][0][3],ellipses[i][0][4],ellipses[i][0][5]])
+        #         else:
+        #             ellipses_.append((ellipses[i][0][0], ellipses[i][0][1], ellipses[i][0][2],ellipses[i][0][2],0))
+                
+                # cv2.ellipse(color_, center, axes, angle, 0, 360, color, 1, cv2.LINE_AA)
+            
             # pts = postprocess_ed(circles, gray)
             # final_pts,status = integrated_detection_pipeline(gray,ellipses_)
             # matcher = Type2SocketFinalProcessor(img)
             matcher = UltimateSocketMatcher()
             t = time.perf_counter_ns()
-            final_pts,status = matcher.solve(ellipses_)
+            final_pts,status,centers = matcher.solve(ellipses_)
 
             # d = np.linalg.norm(final_pts[3] -final_pts[2])
             # r_max = d*13.6/16
@@ -1625,9 +1829,26 @@ if __name__=='__main__':
             #     coord = [[x,y] for x in xs for y in ys]
             #     dc, percent = ransac_process.detect_feature(np.array(coord))
             #     print(f'percent:{percent}')
-            #     cv2.circle(color_, (int(dc.xc+pt[0]-r/2-3), int(dc.yc+pt[1]-r/2-3)), int(dc.radius), (255, 255, 0), 1, cv2.LINE_AA)
-            rvec,tvec,_ = matcher.estimate_pose(final_pts,tl)
-            print(rvec,tvec)
+            #     cv2.circle(color_, (int(dc.xc+pt[0]-r/2-3), int(dc.yc+pt[1]-r/2-3)), int(dc.radius), (255, 255, 0), 1, cv2.LINE_AA)\
+            
+            rvec,tvec,_ = matcher.estimate_pose(centers,tl)
+            print(rvec.transpose(),tvec.transpose())
+            cMo = np.eye(4,dtype=np.float32)
+            cMo[:3,:3] = Rotation.from_rotvec(rvec[:,0]).as_matrix()
+            cMo[:3,3:] = tvec
+            gripper_vec = [0.4356616224333804, -0.1511937489676456, 0.4354592591833484, 1.4881904454936712, 0.7903921464824143, -0.027534098870535564]
+            gripper = np.eye(4,dtype=np.float32)
+            gripper[:3,:3] = Rotation.from_euler('xyz',gripper_vec[3:]).as_matrix()
+            gripper[:3,3] = np.array(gripper_vec[:3])*1000
+            eMc = np.array([[-6.9855857e-01,  7.1512282e-01,  2.4804471e-02, -5.1826664e+01],
+       [-7.1555281e-01, -6.9815123e-01, -2.3854841e-02,  5.5274796e+01],
+       [ 2.5813223e-04, -3.4412913e-02,  9.9940765e-01,  9.5362617e+01],
+       [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]],
+      dtype=np.float32)
+            bMo = gripper@eMc@cMo
+            print(f'trans: {bMo[:3,3]}')
+            eu = Rotation.from_matrix(bMo[:3,:3]).as_euler('xyz',True)
+            print(f'rotation:{eu}')
             cv2.drawFrameAxes(image,matcher.K,matcher.dist,rvec,tvec,50,3)
             print((time.perf_counter_ns()-t)/1e6)
             vis = visualize(color_, final_pts)
@@ -1635,7 +1856,7 @@ if __name__=='__main__':
 
             cv2.imshow('img',image)
             # cv2.imwrite('sample.png',gray)
-            print(f'iter {fname}')
+            print(f'iter {cnt}')
             cv2.imshow('color',color_)
             cv2.waitKey(0)
     cv2.destroyAllWindows()
