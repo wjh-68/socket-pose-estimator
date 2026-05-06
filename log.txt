@@ -1,0 +1,798 @@
+Connected to robot: rob1
+
+0: 384x640 1 port, 34.3ms
+Speed: 3.0ms preprocess, 34.3ms inference, 0.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.36,    -0.66296,     -179.23]), array([     328.42,     -1089.7,      472.59]))
+cMo: (array([    -169.32,     -5.0351,      1.4636]), array([    -31.516,     -26.345,      613.81]))
+Average reprojection error: 0.1722
+find 7 points
+ellipse fileter time:  143.506188
+matcher solve time:  313.828606
+cost time(ms):  pnp=0.124665, remove_frame=0.258585, add_frame=0.003436, optimize=3.167283, draw=0.503465
+optimization total time:  4.06528
+
+0: 384x640 1 port, 30.0ms
+Speed: 1.6ms preprocess, 30.0ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.22,     -0.6647,     -179.42]), array([     328.38,     -1089.8,      472.61]))
+cMo: (array([    -169.45,     -4.8472,      1.4563]), array([    -31.483,     -26.354,         614]))
+Average reprojection error: 0.2542
+find 7 points
+ellipse fileter time:  113.438333
+matcher solve time:  316.848872
+cost time(ms):  pnp=0.105512, remove_frame=0.020667, add_frame=0.003435, optimize=4.398694, draw=0.552486
+optimization total time:  5.088779
+
+0: 384x640 1 port, 26.2ms
+Speed: 1.5ms preprocess, 26.2ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 219 222
+size: 219 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.23,    -0.64842,     -179.49]), array([     328.33,     -1089.9,      472.61]))
+cMo: (array([    -169.45,     -4.7769,      1.4706]), array([    -31.447,     -26.355,       614.1]))
+Average reprojection error: 0.3357
+find 7 points
+ellipse fileter time:  99.019305
+matcher solve time:  289.146831
+cost time(ms):  pnp=0.111495, remove_frame=0.021798, add_frame=0.00343, optimize=7.714313, draw=0.616608
+optimization total time:  8.475801
+
+0: 384x640 1 port, 22.3ms
+Speed: 2.0ms preprocess, 22.3ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.93,    -0.93708,     -178.14]), array([     328.31,       -1091,      472.66]))
+cMo: (array([     -169.7,     -6.1386,      1.2201]), array([    -31.496,      -26.37,       615.1]))
+Average reprojection error: 0.5427
+find 7 points
+ellipse fileter time:  92.626195
+matcher solve time:  323.341998
+cost time(ms):  pnp=0.105443, remove_frame=0.02055, add_frame=0.003478, optimize=11.356557, draw=0.675962
+optimization total time:  12.171109
+
+0: 384x640 1 port, 18.8ms
+Speed: 1.1ms preprocess, 18.8ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([      101.9,    -0.82112,     -178.67]), array([     328.33,     -1090.9,      472.67]))
+cMo: (array([    -169.75,     -5.6016,      1.3212]), array([    -31.515,     -26.382,      615.09]))
+Average reprojection error: 0.4858
+find 7 points
+ellipse fileter time:  84.870817
+matcher solve time:  315.728038
+cost time(ms):  pnp=0.127547, remove_frame=0.025414, add_frame=0.004377, optimize=10.19366, draw=0.714716
+optimization total time:  11.073316
+
+0: 384x640 1 port, 19.3ms
+Speed: 1.1ms preprocess, 19.3ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.89,    -0.74453,     -179.04]), array([     328.34,     -1090.9,      472.68]))
+cMo: (array([    -169.77,     -5.2301,      1.3874]), array([    -31.523,     -26.393,      615.04]))
+Average reprojection error: 0.4519
+find 7 points
+ellipse fileter time:  93.317106
+matcher solve time:  133.912083
+cost time(ms):  pnp=0.105891, remove_frame=0.021425, add_frame=0.003896, optimize=12.239286, draw=0.79427
+optimization total time:  13.173201
+
+0: 384x640 1 port, 22.1ms
+Speed: 1.1ms preprocess, 22.1ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.96,    -0.70901,     -179.21]), array([     328.36,     -1090.7,      472.67]))
+cMo: (array([     -169.7,      -5.064,      1.4181]), array([     -31.53,     -26.389,      614.88]))
+Average reprojection error: 0.4287
+find 7 points
+ellipse fileter time:  96.790353
+matcher solve time:  317.417766
+cost time(ms):  pnp=0.096616, remove_frame=0.021039, add_frame=0.003403, optimize=13.56899, draw=0.828471
+optimization total time:  14.531889
+
+0: 384x640 1 port, 23.1ms
+Speed: 1.7ms preprocess, 23.1ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.97,    -0.67401,     -179.36]), array([     328.34,     -1090.7,      472.67]))
+cMo: (array([     -169.7,     -4.9078,      1.4487]), array([    -31.513,      -26.39,      614.84]))
+Average reprojection error: 0.4437
+find 7 points
+ellipse fileter time:  95.550355
+matcher solve time:  130.221792
+cost time(ms):  pnp=0.107991, remove_frame=0.023825, add_frame=0.004456, optimize=16.463398, draw=0.943698
+optimization total time:  17.551537
+
+0: 384x640 1 port, 19.2ms
+Speed: 1.1ms preprocess, 19.2ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.98,    -0.65499,     -179.42]), array([     328.36,     -1090.6,      472.67]))
+cMo: (array([     -169.7,     -4.8443,       1.466]), array([    -31.517,     -26.391,      614.74]))
+Average reprojection error: 0.4287
+find 7 points
+ellipse fileter time:  86.267701
+matcher solve time:  506.940052
+cost time(ms):  pnp=0.102963, remove_frame=0.020325, add_frame=0.003647, optimize=16.996863, draw=0.913764
+optimization total time:  18.045722
+
+0: 384x640 1 port, 19.9ms
+Speed: 1.2ms preprocess, 19.9ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.03,    -0.63898,     -179.49]), array([     328.37,     -1090.5,      472.66]))
+cMo: (array([    -169.65,     -4.7749,      1.4801]), array([     -31.52,     -26.386,      614.65]))
+Average reprojection error: 0.4143
+find 7 points
+ellipse fileter time:  90.823468
+matcher solve time:  322.561265
+cost time(ms):  pnp=0.10778, remove_frame=0.020633, add_frame=0.003374, optimize=17.633284, draw=0.9529
+optimization total time:  18.726028
+
+0: 384x640 1 port, 22.6ms
+Speed: 1.1ms preprocess, 22.6ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.86,    -0.74448,     -178.95]), array([     328.36,       -1091,      472.67]))
+cMo: (array([    -169.81,     -5.3221,      1.3901]), array([    -31.544,     -26.389,       615.1]))
+Average reprojection error: 0.5061
+find 7 points
+ellipse fileter time:  92.033192
+matcher solve time:  312.057405
+cost time(ms):  pnp=0.105801, remove_frame=0.024319, add_frame=0.003202, optimize=18.294711, draw=0.9809
+optimization total time:  19.417086
+
+0: 384x640 1 port, 22.4ms
+Speed: 1.1ms preprocess, 22.4ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     101.91,     -0.7503,     -178.92]), array([     328.37,     -1090.9,      472.67]))
+cMo: (array([    -169.75,      -5.355,      1.3852]), array([    -31.557,     -26.386,      615.03]))
+Average reprojection error: 0.4506
+find 7 points
+ellipse fileter time:  92.412512
+matcher solve time:  311.029031
+cost time(ms):  pnp=0.104892, remove_frame=0.024803, add_frame=0.004135, optimize=18.566556, draw=0.959868
+optimization total time:  19.66861
+
+0: 384x640 1 port, 20.2ms
+Speed: 2.4ms preprocess, 20.2ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.06,    -0.60985,     -179.59]), array([     328.39,     -1090.5,      472.65]))
+cMo: (array([    -169.62,     -4.6809,      1.5065]), array([    -31.546,     -26.379,      614.63]))
+Average reprojection error: 0.3563
+find 7 points
+ellipse fileter time:  85.640736
+matcher solve time:  131.092681
+cost time(ms):  pnp=0.106768, remove_frame=0.024492, add_frame=0.003235, optimize=18.324049, draw=1.041586
+optimization total time:  19.508497
+
+0: 384x640 1 port, 25.1ms
+Speed: 1.1ms preprocess, 25.1ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.07,    -0.60712,      -179.6]), array([      328.4,     -1090.5,      472.64]))
+cMo: (array([    -169.61,     -4.6697,      1.5089]), array([    -31.547,     -26.373,      614.61]))
+Average reprojection error: 0.3636
+find 7 points
+ellipse fileter time:  95.282778
+matcher solve time:  310.58023
+cost time(ms):  pnp=0.103823, remove_frame=0.025348, add_frame=0.003547, optimize=18.919371, draw=1.014465
+optimization total time:  20.074785
+
+0: 384x640 1 port, 23.3ms
+Speed: 1.3ms preprocess, 23.3ms inference, 0.6ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.07,     -0.6314,     -179.48]), array([      328.4,     -1090.4,      472.63]))
+cMo: (array([     -169.6,     -4.7918,      1.4882]), array([    -31.547,     -26.363,      614.57]))
+Average reprojection error: 0.3561
+find 7 points
+ellipse fileter time:  94.551672
+matcher solve time:  502.214715
+cost time(ms):  pnp=0.106092, remove_frame=0.024635, add_frame=0.00484, optimize=18.936559, draw=1.003659
+optimization total time:  20.083953
+
+0: 384x640 1 port, 22.7ms
+Speed: 1.9ms preprocess, 22.7ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.04,    -0.62004,     -179.54]), array([      328.4,     -1090.5,      472.64]))
+cMo: (array([    -169.64,       -4.73,      1.4977]), array([    -31.553,     -26.367,      614.64]))
+Average reprojection error: 0.3666
+find 7 points
+ellipse fileter time:  104.77092
+matcher solve time:  507.740144
+cost time(ms):  pnp=0.107649, remove_frame=0.026363, add_frame=0.003101, optimize=17.787386, draw=0.953919
+optimization total time:  18.886203
+
+0: 384x640 1 port, 22.3ms
+Speed: 1.1ms preprocess, 22.3ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.04,     -0.6136,     -179.58]), array([     328.42,     -1090.5,      472.64]))
+cMo: (array([    -169.64,     -4.6867,       1.503]), array([    -31.572,     -26.372,      614.66]))
+Average reprojection error: 0.3235
+find 7 points
+ellipse fileter time:  92.305774
+matcher solve time:  507.997117
+cost time(ms):  pnp=0.105851, remove_frame=0.024482, add_frame=0.003245, optimize=18.121252, draw=0.94224
+optimization total time:  19.205092
+
+0: 384x640 1 port, 21.4ms
+Speed: 1.2ms preprocess, 21.4ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.08,    -0.62376,     -179.57]), array([     328.41,     -1090.5,      472.64]))
+cMo: (array([    -169.59,     -4.7023,      1.4932]), array([    -31.572,     -26.365,      614.69]))
+Average reprojection error: 0.3183
+find 7 points
+ellipse fileter time:  90.083169
+matcher solve time:  507.344427
+cost time(ms):  pnp=0.096878, remove_frame=0.023746, add_frame=0.003181, optimize=17.718502, draw=1.031916
+optimization total time:  18.882172
+
+0: 384x640 1 port, 22.1ms
+Speed: 1.2ms preprocess, 22.1ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.08,    -0.63343,     -179.54]), array([     328.41,     -1090.6,      472.64]))
+cMo: (array([    -169.59,     -4.7277,      1.4843]), array([    -31.573,     -26.364,      614.75]))
+Average reprojection error: 0.3210
+find 7 points
+ellipse fileter time:  89.532352
+matcher solve time:  563.136107
+cost time(ms):  pnp=0.104509, remove_frame=0.023721, add_frame=0.003463, optimize=18.567484, draw=0.954976
+optimization total time:  19.662434
+
+0: 384x640 1 port, 20.2ms
+Speed: 1.1ms preprocess, 20.2ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([      102.3,    -0.52359,      179.94]), array([     328.43,     -1090.2,      472.62]))
+cMo: (array([    -169.39,     -4.2033,       1.579]), array([    -31.564,     -26.357,      614.31]))
+Average reprojection error: 0.2491
+find 7 points
+ellipse fileter time:  88.884537
+matcher solve time:  501.298887
+cost time(ms):  pnp=0.108223, remove_frame=0.023964, add_frame=0.003597, optimize=18.443355, draw=0.988421
+optimization total time:  19.575505
+
+0: 384x640 1 port, 20.9ms
+Speed: 1.4ms preprocess, 20.9ms inference, 0.6ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.35,    -0.52636,      179.94]), array([     328.44,     -1090.1,      472.61]))
+cMo: (array([    -169.34,     -4.2009,      1.5761]), array([    -31.568,     -26.352,      614.25]))
+Average reprojection error: 0.2500
+find 7 points
+ellipse fileter time:  87.147388
+matcher solve time:  507.624137
+cost time(ms):  pnp=0.112173, remove_frame=0.026395, add_frame=0.003702, optimize=19.502204, draw=0.968278
+optimization total time:  20.620437
+
+0: 384x640 1 port, 20.9ms
+Speed: 2.4ms preprocess, 20.9ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 223
+size: 218 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.35,     -0.5445,     -179.98]), array([     328.44,     -1090.1,      472.61]))
+cMo: (array([    -169.34,     -4.2853,      1.5605]), array([    -31.572,     -26.351,      614.28]))
+Average reprojection error: 0.2457
+find 7 points
+ellipse fileter time:  92.246265
+matcher solve time:  132.906962
+cost time(ms):  pnp=0.106465, remove_frame=0.025063, add_frame=0.003158, optimize=18.228985, draw=1.020485
+optimization total time:  19.393509
+
+0: 384x640 1 port, 21.8ms
+Speed: 1.1ms preprocess, 21.8ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.39,    -0.57287,     -179.85]), array([     328.44,     -1090.1,       472.6]))
+cMo: (array([    -169.29,     -4.4161,      1.5359]), array([    -31.569,     -26.347,      614.23]))
+Average reprojection error: 0.2448
+find 7 points
+ellipse fileter time:  91.807022
+matcher solve time:  314.990768
+cost time(ms):  pnp=0.107938, remove_frame=0.024052, add_frame=0.003229, optimize=18.33016, draw=0.96857
+optimization total time:  19.441769
+
+0: 384x640 1 port, 20.4ms
+Speed: 1.6ms preprocess, 20.4ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.41,    -0.54634,     -179.98]), array([     328.45,     -1090.1,      472.61]))
+cMo: (array([    -169.28,     -4.2849,      1.5586]), array([    -31.573,     -26.351,      614.26]))
+Average reprojection error: 0.2496
+find 7 points
+ellipse fileter time:  93.309832
+matcher solve time:  1209.54039
+cost time(ms):  pnp=0.10522, remove_frame=0.022606, add_frame=0.003227, optimize=18.247988, draw=0.948539
+optimization total time:  19.336251
+
+0: 384x640 1 port, 19.7ms
+Speed: 1.1ms preprocess, 19.7ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.41,     -0.5347,      179.97]), array([     328.44,     -1090.1,      472.61]))
+cMo: (array([    -169.28,     -4.2392,      1.5689]), array([     -31.57,     -26.347,      614.27]))
+Average reprojection error: 0.2414
+find 7 points
+ellipse fileter time:  91.203587
+matcher solve time:  315.310674
+cost time(ms):  pnp=0.097932, remove_frame=0.024263, add_frame=0.003091, optimize=17.760242, draw=0.950176
+optimization total time:  18.843289
+
+0: 384x640 1 port, 22.8ms
+Speed: 1.4ms preprocess, 22.8ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 222
+size: 217 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.42,    -0.53165,      179.96]), array([     328.45,     -1090.1,       472.6]))
+cMo: (array([    -169.26,     -4.2288,      1.5716]), array([    -31.575,     -26.341,      614.26]))
+Average reprojection error: 0.2320
+find 7 points
+ellipse fileter time:  95.598431
+matcher solve time:  506.152531
+cost time(ms):  pnp=0.100763, remove_frame=0.02441, add_frame=0.003147, optimize=17.442933, draw=0.98349
+optimization total time:  18.563057
+
+0: 384x640 1 port, 26.3ms
+Speed: 1.1ms preprocess, 26.3ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040858    -0.99745     -379.04]
+ [   -0.71567     0.69831    0.013391      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.38,    -0.53312,      179.98]), array([     328.43,     -1090.1,      472.61]))
+cMo: (array([    -169.31,     -4.2476,      1.5706]), array([     -31.56,     -26.346,      614.26]))
+Average reprojection error: 0.2938
+find 7 points
+ellipse fileter time:  99.673427
+matcher solve time:  566.05618
+cost time(ms):  pnp=0.10176, remove_frame=0.024315, add_frame=0.002982, optimize=17.416624, draw=0.967902
+optimization total time:  18.521369
+
+0: 384x640 1 port, 22.8ms
+Speed: 1.2ms preprocess, 22.8ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.34,    -0.53527,      179.99]), array([     328.42,     -1090.1,      472.61]))
+cMo: (array([    -169.35,     -4.2514,      1.5687]), array([    -31.545,     -26.352,      614.27]))
+Average reprojection error: 0.3526
+find 7 points
+ellipse fileter time:  95.68014
+matcher solve time:  560.006421
+cost time(ms):  pnp=0.094788, remove_frame=0.023147, add_frame=0.003257, optimize=17.395334, draw=0.946572
+optimization total time:  18.471264
+
+0: 384x640 1 port, 23.2ms
+Speed: 1.1ms preprocess, 23.2ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 217 223
+size: 217 223
+robot_pose: [[    0.69598     0.71463   -0.070113      341.52]
+ [   -0.05853   -0.040859    -0.99745     -379.04]
+ [   -0.71567     0.69831     0.01339      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.27,    -0.54321,     -179.98]), array([     328.42,     -1090.1,      472.61]))
+cMo: (array([    -169.42,      -4.281,      1.5616]), array([    -31.543,     -26.353,      614.26]))
+Average reprojection error: 0.3527
+find 7 points
+ellipse fileter time:  90.537875
+matcher solve time:  505.274292
+cost time(ms):  pnp=0.098265, remove_frame=0.025944, add_frame=0.003141, optimize=17.393232, draw=0.975004
+optimization total time:  18.503705
+
+0: 384x640 1 port, 21.8ms
+Speed: 1.2ms preprocess, 21.8ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 222
+size: 218 222
+robot_pose: [[    0.69594     0.71466   -0.070168       341.5]
+ [  -0.058557   -0.040909    -0.99745     -379.07]
+ [   -0.71571     0.69827    0.013378      348.62]
+ [          0           0           0           1]]
+bMo: (array([     102.25,    -0.53691,      179.99]), array([     328.39,     -1090.2,      472.62]))
+cMo: (array([    -169.44,       -4.26,      1.5702]), array([     -31.57,     -26.369,      614.28]))
+Average reprojection error: 0.4020
+find 7 points
+ellipse fileter time:  95.207084
+matcher solve time:  309.780327
+cost time(ms):  pnp=0.108112, remove_frame=0.024376, add_frame=0.003316, optimize=17.719888, draw=0.97596
+optimization total time:  18.841693
+
+0: 384x640 1 port, 23.1ms
+Speed: 1.1ms preprocess, 23.1ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 213 219
+size: 213 219
+robot_pose: [[     0.6959      0.7147   -0.070176      341.54]
+ [  -0.058302    -0.04117    -0.99745     -380.38]
+ [   -0.71577     0.69822    0.013018      349.22]
+ [          0           0           0           1]]
+bMo: (array([     102.28,    -0.54316,     -179.89]), array([     328.38,     -1090.1,      472.63]))
+cMo: (array([    -169.38,     -4.3757,      1.5705]), array([    -31.424,     -26.079,      612.87]))
+Average reprojection error: 0.4487
+find 7 points
+ellipse fileter time:  93.500766
+matcher solve time:  132.868304
+cost time(ms):  pnp=0.108363, remove_frame=0.026456, add_frame=0.003497, optimize=18.345192, draw=0.955432
+optimization total time:  19.447183
+
+0: 384x640 1 port, 22.5ms
+Speed: 1.1ms preprocess, 22.5ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 215 216
+size: 215 216
+robot_pose: [[    0.69578      0.7148   -0.070299      341.55]
+ [  -0.057948    -0.04169    -0.99745     -382.36]
+ [   -0.71591     0.69808    0.012414      350.12]
+ [          0           0           0           1]]
+bMo: (array([     102.09,    -0.54339,     -179.89]), array([     328.36,     -1090.3,      472.67]))
+cMo: (array([    -169.54,     -4.3818,      1.5792]), array([    -31.336,     -25.705,      610.99]))
+Average reprojection error: 0.5161
+find 7 points
+ellipse fileter time:  89.794905
+matcher solve time:  504.188315
+cost time(ms):  pnp=0.097372, remove_frame=0.023178, add_frame=0.003357, optimize=17.683124, draw=0.962571
+optimization total time:  18.778215
+
+0: 384x640 1 port, 23.0ms
+Speed: 1.4ms preprocess, 23.0ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 212 210
+size: 212 210
+robot_pose: [[    0.69585     0.71471   -0.070523      341.54]
+ [  -0.056549   -0.043366    -0.99746     -388.53]
+ [   -0.71595     0.69807     0.01024      352.89]
+ [          0           0           0           1]]
+bMo: (array([      101.3,     -0.5475,     -179.87]), array([     328.32,     -1091.4,      472.83]))
+cMo: (array([    -170.21,     -4.4167,      1.5692]), array([    -31.108,     -24.764,      605.64]))
+Average reprojection error: 0.8188
+find 7 points
+ellipse fileter time:  99.531495
+matcher solve time:  566.810705
+cost time(ms):  pnp=0.106371, remove_frame=0.03012, add_frame=0.003343, optimize=17.672365, draw=0.996231
+optimization total time:  18.816974
+
+0: 384x640 1 port, 22.5ms
+Speed: 1.8ms preprocess, 22.5ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 218 211
+size: 218 211
+robot_pose: [[    0.69605     0.71451   -0.070722      341.37]
+ [  -0.054483   -0.045655    -0.99747      -395.4]
+ [   -0.71593     0.69814   0.0071511      355.85]
+ [          0           0           0           1]]
+bMo: (array([     99.844,    -0.50397,      179.83]), array([     328.24,     -1093.4,      473.06]))
+cMo: (array([    -171.49,     -4.1243,      1.5893]), array([    -31.003,      -24.32,      600.35]))
+Average reprojection error: 1.3729
+find 7 points
+ellipse fileter time:  95.493413
+matcher solve time:  513.89176
+cost time(ms):  pnp=0.105446, remove_frame=0.024301, add_frame=0.003685, optimize=27.635272, draw=0.953538
+optimization total time:  28.730506
+
+0: 384x640 1 port, 21.6ms
+Speed: 1.2ms preprocess, 21.6ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 221 213
+size: 221 213
+robot_pose: [[    0.69624     0.71428   -0.071142      341.16]
+ [  -0.052455   -0.048217    -0.99746     -402.68]
+ [   -0.71589      0.6982   0.0038971      358.98]
+ [          0           0           0           1]]
+bMo: (array([     96.672,    -0.42954,      179.34]), array([     328.14,     -1096.3,      473.39]))
+cMo: (array([    -174.48,     -3.6543,      1.6379]), array([    -31.086,      -23.89,      595.56]))
+Average reprojection error: 2.0567
+find 7 points
+ellipse fileter time:  90.825498
+matcher solve time:  732.463373
+cost time(ms):  pnp=0.096094, remove_frame=0.023585, add_frame=0.003612, optimize=27.076109, draw=0.962325
+optimization total time:  28.170448
+
+0: 384x640 1 port, 22.4ms
+Speed: 1.2ms preprocess, 22.4ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 221 233
+size: 221 233
+robot_pose: [[    0.69638     0.71409   -0.071568      341.02]
+ [  -0.049944    -0.05126    -0.99744     -415.35]
+ [   -0.71593     0.69817 -3.2446e-05       364.7]
+ [          0           0           0           1]]
+bMo: (array([     90.855,    -0.33344,       179.1]), array([     327.97,     -1102.1,      473.96]))
+cMo: (array([     179.92,     -3.4363,      1.7197]), array([    -30.914,     -21.574,      588.28]))
+Average reprojection error: 2.8530
+find 7 points
+ellipse fileter time:  93.498872
+matcher solve time:  736.414996
+cost time(ms):  pnp=0.099335, remove_frame=0.023991, add_frame=0.003671, optimize=29.821191, draw=0.960455
+optimization total time:  30.916871
+
+0: 384x640 1 port, 21.4ms
+Speed: 1.1ms preprocess, 21.4ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 227 233
+size: 227 233
+robot_pose: [[    0.69651     0.71392     -0.0721      340.82]
+ [  -0.047208   -0.054672    -0.99739      -429.8]
+ [     -0.716     0.69809  -0.0043766      371.22]
+ [          0           0           0           1]]
+bMo: (array([     95.103,    -0.15541,      178.11]), array([     327.92,     -1104.3,      474.12]))
+cMo: (array([     -175.6,     -2.4786,      1.8786]), array([    -30.591,     -18.356,      575.47]))
+Average reprojection error: 13.3822
+find 7 points
+ellipse fileter time:  93.566411
+matcher solve time:  746.236367
+cost time(ms):  pnp=0.118496, remove_frame=0.030319, add_frame=0.004258, optimize=29.831137, draw=0.968506
+optimization total time:  30.961124
+
+0: 384x640 1 port, 22.4ms
+Speed: 1.1ms preprocess, 22.4ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 239 263
+size: 239 263
+robot_pose: [[    0.69659     0.71378   -0.072691      340.59]
+ [  -0.044147   -0.058481    -0.99731      -447.1]
+ [   -0.71611     0.69792  -0.0092259      378.99]
+ [          0           0           0           1]]
+bMo: (array([     94.831,     0.18955,     -179.97]), array([     327.85,       -1105,      474.28]))
+cMo: (array([    -175.61,     -4.4305,      2.2394]), array([    -30.017,     -14.119,      558.44]))
+Average reprojection error: 14.2968
+find 7 points
+ellipse fileter time:  96.358219
+matcher solve time:  744.347435
+cost time(ms):  pnp=0.104756, remove_frame=0.025441, add_frame=0.003388, optimize=21.005326, draw=0.955781
+optimization total time:  22.103108
+
+0: 384x640 1 port, 24.7ms
+Speed: 1.1ms preprocess, 24.7ms inference, 0.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 242 256
+size: 242 256
+robot_pose: [[    0.69671      0.7136   -0.073285      340.42]
+ [   -0.04104   -0.062342    -0.99721     -465.87]
+ [   -0.71618     0.69777   -0.014148      387.41]
+ [          0           0           0           1]]
+bMo: (array([      94.26,    -0.03755,      178.66]), array([     327.75,       -1110,      474.68]))
+cMo: (array([    -175.88,      -3.098,      1.9966]), array([    -29.554,     -9.3587,      544.17]))
+Average reprojection error: 15.0442
+find 7 points
+ellipse fileter time:  97.170937
+matcher solve time:  752.695248
+cost time(ms):  pnp=0.10206, remove_frame=0.0248, add_frame=0.002999, optimize=39.889083, draw=0.972438
+optimization total time:  41.000048
+
+0: 384x640 1 port, 21.9ms
+Speed: 1.1ms preprocess, 21.9ms inference, 0.6ms postprocess per image at shape (1, 3, 384, 640)
+size: 258 257
+size: 258 257
+robot_pose: [[    0.69678     0.71345   -0.074012      340.27]
+ [  -0.037494   -0.066816    -0.99706     -488.17]
+ [    -0.7163     0.69751   -0.019806      397.21]
+ [          0           0           0           1]]
+bMo: (array([     92.668,    -0.26343,      179.77]), array([     327.48,     -1120.6,      475.66]))
+cMo: (array([    -177.13,     -4.2444,      1.7658]), array([    -29.163,     -4.1246,      532.05]))
+Average reprojection error: 15.1414
+find 7 points
+ellipse fileter time:  84.784185
+matcher solve time:  743.536869
+cost time(ms):  pnp=0.113271, remove_frame=0.025998, add_frame=0.003654, optimize=42.373466, draw=0.976509
+optimization total time:  43.500798
+
+0: 384x640 1 port, 19.9ms
+Speed: 1.1ms preprocess, 19.9ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 275 297
+size: 275 297
+robot_pose: [[    0.69681     0.71336   -0.074731      340.25]
+ [  -0.034102   -0.071123    -0.99688     -510.22]
+ [   -0.71645     0.69718   -0.025232      406.79]
+ [          0           0           0           1]]
+bMo: (array([     94.054,     0.80137,      175.17]), array([     327.46,     -1121.5,      475.76]))
+cMo: (array([    -175.45,     0.30909,      2.8676]), array([     -28.15,        2.13,      510.59]))
+Average reprojection error: 15.6157
+find 7 points
+ellipse fileter time:  88.013287
+matcher solve time:  743.639992
+cost time(ms):  pnp=0.104181, remove_frame=0.025375, add_frame=0.003427, optimize=22.940605, draw=0.969614
+optimization total time:  24.05156
+
+0: 384x640 1 port, 22.9ms
+Speed: 1.5ms preprocess, 22.9ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 299 296
+size: 299 296
+robot_pose: [[    0.69679     0.71329   -0.075482      340.29]
+ [  -0.030364   -0.075807    -0.99666     -534.63]
+ [   -0.71663     0.69675   -0.031163      417.25]
+ [          0           0           0           1]]
+bMo: (array([     91.989,     -0.6236,     -178.99]), array([     327.24,     -1129.7,      476.42]))
+cMo: (array([    -177.12,     -5.5569,      1.3828]), array([     -27.26,      8.5704,      494.05]))
+Average reprojection error: 27.3611
+find 7 points
+ellipse fileter time:  92.714789
+matcher solve time:  744.511371
+cost time(ms):  pnp=0.096949, remove_frame=0.024139, add_frame=0.003359, optimize=61.322792, draw=0.989037
+optimization total time:  62.44474
+
+0: 384x640 1 port, 23.5ms
+Speed: 1.1ms preprocess, 23.5ms inference, 0.6ms postprocess per image at shape (1, 3, 384, 640)
+size: 314 330
+size: 314 330
+robot_pose: [[    0.69678     0.71323   -0.076167      340.49]
+ [  -0.026589   -0.080432    -0.99641     -559.48]
+ [   -0.71679      0.6963    -0.03708       427.7]
+ [          0           0           0           1]]
+bMo: (array([     91.873,     0.38142,      174.69]), array([     327.22,     -1130.4,      476.49]))
+cMo: (array([    -176.95,     0.69856,      2.5123]), array([    -25.757,      15.969,      469.76]))
+Average reprojection error: 40.3563
+find 7 points
+ellipse fileter time:  95.156697
+matcher solve time:  741.542515
+cost time(ms):  pnp=0.102592, remove_frame=0.02405, add_frame=0.003565, optimize=21.666122, draw=0.967666
+optimization total time:  22.772762
+
+0: 384x640 1 port, 21.8ms
+Speed: 1.5ms preprocess, 21.8ms inference, 0.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 340 326
+size: 340 326
+robot_pose: [[    0.69672     0.71321   -0.076863      340.77]
+ [  -0.023071   -0.084815    -0.99613     -582.97]
+ [   -0.71697      0.6958   -0.042638      437.44]
+ [          0           0           0           1]]
+bMo: (array([     92.434,    -0.21896,      178.62]), array([      327.2,     -1130.8,      476.55]))
+cMo: (array([    -176.06,     -3.2576,      1.8414]), array([    -24.239,      23.124,      446.69]))
+Average reprojection error: 40.7174
+find 7 points
+ellipse fileter time:  101.539551
+matcher solve time:  514.875757
+cost time(ms):  pnp=0.097369, remove_frame=0.02265, add_frame=0.003099, optimize=21.582847, draw=1.019376
+optimization total time:  22.733467
+
+0: 384x640 1 port, 21.6ms
+Speed: 2.4ms preprocess, 21.6ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 366 331
+size: 366 331
+robot_pose: [[     0.6967     0.71318   -0.077351      341.03]
+ [  -0.020441   -0.088046    -0.99591     -600.52]
+ [   -0.71708     0.69543   -0.046763      444.59]
+ [          0           0           0           1]]
+bMo: (array([     82.757,     0.47591,      177.63]), array([     327.22,     -1129.8,      476.68]))
+cMo: (array([     174.46,     -2.3163,      2.5726]), array([    -22.949,       28.49,      428.24]))
+Average reprojection error: 40.9716
+find 7 points
+ellipse fileter time:  106.779455
+matcher solve time:  565.641051
+cost time(ms):  pnp=0.105261, remove_frame=0.025433, add_frame=0.0035, optimize=22.444754, draw=0.960056
+optimization total time:  23.547906
+
+0: 384x640 1 port, 22.3ms
+Speed: 1.2ms preprocess, 22.3ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 379 363
+size: 379 363
+ellipse fileter time:  113.971688
+matcher solve time:  5.373498
+cost time(ms):  pnp=-163.209098, remove_frame=0.025433, add_frame=0.0035, optimize=22.444754, draw=0.960056
+optimization total time:  0.013646
+
+0: 384x640 1 port, 23.3ms
+Speed: 1.2ms preprocess, 23.3ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 377 348
+size: 377 348
+ellipse fileter time:  116.537744
+matcher solve time:  5.404907
+cost time(ms):  pnp=-304.143591, remove_frame=0.025433, add_frame=0.0035, optimize=22.444754, draw=0.960056
+optimization total time:  0.012807
+
+0: 384x640 1 port, 23.5ms
+Speed: 1.5ms preprocess, 23.5ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 376 346
+size: 376 346
+ellipse fileter time:  120.475578
+matcher solve time:  5.494741
+cost time(ms):  pnp=-448.261237, remove_frame=0.025433, add_frame=0.0035, optimize=22.444754, draw=0.960056
+optimization total time:  0.016703
+
+0: 384x640 1 port, 21.2ms
+Speed: 2.2ms preprocess, 21.2ms inference, 0.5ms postprocess per image at shape (1, 3, 384, 640)
+size: 376 350
+size: 376 350
