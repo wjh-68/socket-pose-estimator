@@ -48,10 +48,10 @@ class StaticPoseOptimizer:
 
         # BA configuration
         self.loss = 'huber'
-        self.loss_scale = 1.0
-        self.ftol = 1e-8
-        self.xtol = 1e-8
-        self.max_nfev = 500
+        self.loss_scale = 3.0
+        self.ftol = 1e-3
+        self.xtol = 1e-3
+        self.max_nfev = 300
 
         # Cache camera params
         self.fx = self.K[0, 0]
@@ -239,7 +239,7 @@ class StaticPoseOptimizer:
         result = least_squares(
             optimizer,
             initial_params,
-            method='trf',
+            method='dogbox',
             ftol=self.ftol,
             xtol=self.xtol,
             max_nfev=self.max_nfev,
