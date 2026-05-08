@@ -39,7 +39,6 @@ class StaticPoseOptimizer:
         self.K = np.array(K, dtype=np.float64)
         self.dist = np.array(dist, dtype=np.float64)
         self.eMc = np.eye(4, dtype=np.float64)  # default identity
-        self.oMo = np.eye(4, dtype=np.float64)  # default identity
         self.obj_pts = None # 3D object points (Nx3), you can set it or provide per-frame
 
         self._frames = []  # list of {robot_pose, pts2d, pts3d}
@@ -48,7 +47,7 @@ class StaticPoseOptimizer:
 
         # BA configuration
         self.loss = 'huber'
-        self.loss_scale = 3.0
+        self.loss_scale = 0.3
         self.ftol = 1e-3
         self.xtol = 1e-3
         self.max_nfev = 300
@@ -63,10 +62,6 @@ class StaticPoseOptimizer:
     def set_extrinsics(self, eMc):
         """Set eye-to-hand calibration matrix (camera to end-effector)."""
         self.eMc = np.array(eMc, dtype=np.float64)
-
-    def set_object_transform(self, oMo):
-        """Set object coordinate frame transformation (e.g., object in base frame offset)."""
-        self.oMo = np.array(oMo, dtype=np.float64)
 
     def set_object_pts(self, obj_pts):
         """Set 3D object model points (Nx3)."""
@@ -233,7 +228,7 @@ class StaticPoseOptimizer:
 
         optimizer = _StaticPoseOptimizerFunctor(
             self._frames, self.K, self.dist,
-            self.eMc, self.oMo, self.loss, self.loss_scale
+            self.eMc, self.loss, self.loss_scale
         )
 
         result = least_squares(
@@ -269,7 +264,7 @@ class StaticPoseOptimizer:
         eMb = np.linalg.inv(bMe)
         eMc_inv = np.linalg.inv(self.eMc)
         bMo = self._pose
-        cMo = eMc_inv @ eMb @ bMo @ self.oMo
+        cMo = eMc_inv @ eMb @ bMo
         return cMo
 
     def _project(self, pts3d, R, tvec):
@@ -334,10 +329,9 @@ class StaticPoseOptimizer:
 class _StaticPoseOptimizerFunctor:
     """Internal functor for scipy optimization."""
 
-    def __init__(self, frames, K, dist, eMc, oMo, loss, loss_scale):
+    def __init__(self, frames, K, dist, eMc, loss, loss_scale):
         self.frames = frames
         self.eMc = np.array(eMc, dtype=np.float64)
-        self.oMo = np.array(oMo, dtype=np.float64)
 
         # Unpack camera params
         fx, fy = K[0, 0], K[1, 1]
@@ -359,7 +353,7 @@ class _StaticPoseOptimizerFunctor:
             # Compute cMo
             eMb = np.linalg.inv(bMe)
             eMc_inv = np.linalg.inv(self.eMc)
-            cMo = eMc_inv @ eMb @ bMo @ self.oMo
+            cMo = eMc_inv @ eMb @ bMo
 
             rvec = Rotation.from_matrix(cMo[:3, :3]).as_rotvec()
             tvec = cMo[:3, 3]
