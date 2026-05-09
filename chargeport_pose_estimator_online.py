@@ -41,7 +41,6 @@ obj_pts = np.array([
         ], dtype=np.float64)
 # Transform from object frame to model frame (if needed)        
 oMo = np.eye(4,dtype=np.float32)
-oMo[:3,:3] = Rotation.from_rotvec(np.array([1,0,0])*np.pi).as_matrix()
 
 def solvePnP_IPPE(pts2d, pts3d, K, dist):
     """Wrapper for cv2.solvePnP with IPPE method and validity checks"""
@@ -112,64 +111,65 @@ def get_robot_pose(robot_rpc_client, robot_name):
     robot_pose[:3, 3] = t.flatten() * 1000  # mm
     return robot_pose, tcp_pose
 
-# ===================== 线程安全：最新帧缓存 =====================
+# ===================== 线程安全：独立锁，数据+时间戳 =====================
 latest_frame = None
+latest_frame_ts = 0
 latest_pose = None
+latest_pose_ts = 0
 frame_lock = threading.Lock()
+pose_lock = threading.Lock()
 
 # robot params
 robot_rpc_client = None
 robot_name = None
-# ===================== 独立线程：同时读取 相机和机械臂 =====================
-def read_camera_robot():
-    
-    global latest_frame, latest_pose
-    global robot_name, robot_rpc_client
-    cap = cv2.VideoCapture(CAMERA_ID)
-    
-    # 你的摄像头参数
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
-    cap.set(cv2.CAP_PROP_BRIGHTNESS, 128)
-    
-    while True:
-        ret, frame = cap.read()
-        robot_pose, raw_tcp = get_robot_pose(robot_rpc_client, robot_name)
 
-        if not ret:
-            break
-        
-        # 只保存最新一帧，旧帧直接丢弃！解决缓冲区延迟
-        with frame_lock:
-            latest_frame = frame.copy()
-            latest_pose = robot_pose
-    
-    cap.release()
-
-
-# ===================== 独立线程：只读取最新帧 =====================
+# ===================== 相机线程：只管帧和时间戳 =====================
 def read_camera():
-    
-    global latest_frame
+    global latest_frame, latest_frame_ts
     cap = cv2.VideoCapture(CAMERA_ID)
-    
-    # 你的摄像头参数
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
     cap.set(cv2.CAP_PROP_BRIGHTNESS, 128)
-    
+
     while True:
         ret, frame = cap.read()
-        
-        if not ret:
-            break
-        
-        # 只保存最新一帧，旧帧直接丢弃！解决缓冲区延迟
-        with frame_lock:
-            latest_frame = frame.copy()
-            
-    
+        if ret:
+            with frame_lock:
+                latest_frame = frame.copy()
+                latest_frame_ts = time.perf_counter_ns()
+
     cap.release()
+
+# ===================== 机械臂线程：只管位姿和时间戳 =====================
+def read_robot():
+    global latest_pose, latest_pose_ts
+    global robot_name, robot_rpc_client
+    while True:
+        if robot_rpc_client is None or robot_name is None:
+            time.sleep(0.01)
+            continue
+        robot_pose, raw_tcp = get_robot_pose(robot_rpc_client, robot_name)
+        with pose_lock:
+            latest_pose = robot_pose
+            latest_pose_ts = time.perf_counter_ns()
+
+# ===================== 同步拿取最新数据对（允许时间差容忍） =====================
+def get_synced_frame_pose(tolerance_ns=20_000_000):
+    """
+    返回 (frame, pose, time_diff_ns) 只有时间差在 tolerance 内才算同步成功。
+    """
+    with frame_lock:
+        frame = latest_frame
+        frame_ts = latest_frame_ts
+    with pose_lock:
+        pose = latest_pose
+        pose_ts = latest_pose_ts
+
+    if frame is None or pose is None:
+        return None, None, -1
+
+    diff = abs(frame_ts - pose_ts)
+    return frame, pose, diff
 
 
 
@@ -201,19 +201,23 @@ def main():
     robot_name = robot_rpc_client.getRobotNames()[0]
     print(f"Connected to robot: {robot_name}")
 
-    # 启动摄像头和机械臂拿取线程（后台一直跑）
-    frame_thread = threading.Thread(target=read_camera_robot, daemon=True)
-    frame_thread.start()
+    # 启动独立线程：相机和机械臂分别采集
+    camera_thread = threading.Thread(target=read_camera, daemon=True)
+    camera_thread.start()
+    robot_thread = threading.Thread(target=read_robot, daemon=True)
+    robot_thread.start()
 
     frame_id = 0
     while True:
-        # Get camera frame
-        # 1. 获取【最新实时帧】
-        with frame_lock:
-            if latest_frame is None or latest_pose is None:
-                continue
-            img = latest_frame  # 永远是当前最新画面！
-            robot_pose = latest_pose
+        # 同步拿取：独立锁，不阻塞
+        img, robot_pose, diff_ns = get_synced_frame_pose(tolerance_ns=20_000_000)
+        if img is None:
+            continue
+        if diff_ns < 0:
+            continue
+        if diff_ns > 20_000_000:
+            # 时间差太大，跳过这一帧（采集太快会自然追上）
+            continue
         # ret, img = cap.read()
         # if not ret:
         #     print("Failed to grab frame")
@@ -333,10 +337,8 @@ def main():
         # cv.imshow("vis_points",vis_points)
 
         # save image with name of frame_id
-        img_path = os.path.join(DATA_DIR, f"img_{frame_id}.jpg")
-        
-        # 保存
-        cv2.imwrite(img_path, img)
+        # img_path = os.path.join(DATA_DIR, f"img_{frame_id}.jpg")
+        # cv2.imwrite(img_path, img)
         
         cv.imshow("vis_ellipse",vis_ellipse)
         cv.imshow('image',img)
