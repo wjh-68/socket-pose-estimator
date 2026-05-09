@@ -31,6 +31,18 @@ python socket_pose_estimator.py
 
 VISUALIZE=True 时会显示检测结果，VISUALIZE_DELAY 控制每帧停留时间(ms)。
 
+### 数据集录制
+
+```bash
+python record_dataset.py
+```
+
+录制相机帧 + 机械臂位姿，同步保存到 `dataset/recording/<timestamp>/`，包含：
+- `images/` - 原始图像
+- `metadata.json` - 时间戳、位姿、同步状态
+
+按 `p` 暂停/继续，`q` 退出。`SAVE_INVALID=False` 时只保存严格同步帧。
+
 ## 算法流程
 
 1. **单帧检测**: IPPE (SolvePnP with SOLVEPNP_IPPE) 从2D-3D对应关系求解相机位姿
