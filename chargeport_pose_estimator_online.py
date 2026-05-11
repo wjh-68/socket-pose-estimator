@@ -19,6 +19,15 @@ CAMERA_ID = 0
 # ============ Config ============
 DATA_DIR = "dataset/save_data"
 SLIDING_WINDOW_SIZE = 10
+
+# PnP threshold config
+USE_ADAPTIVE_THRESHOLD = True  # True = adaptive, False = fixed
+FIXED_ERROR_THRESHOLD = 0.4    # used when USE_ADAPTIVE_THRESHOLD = False
+ADAPTIVE_MULTIPLIER = 2.0      # threshold = median_error * multiplier
+
+# Frame rejection threshold - if ALL points have error > this, skip
+FRAME_REJECT_THRESHOLD = 1.0   # pixels
+
 # Camera on robot end-effector (eye-to-hand extrinsic)
 eMc = np.array([
     [-7.2267956e-01,  6.9102561e-01, -1.4759262e-02 ,-5.1758522e+01],
@@ -62,6 +71,59 @@ def solvePnP_IPPE(pts2d, pts3d, K, dist):
         return None, None, False
 
     return rvec, tvec, True
+
+def compute_reproj_error(pts3d, rvec, tvec, pts2d, K, dist):
+    proj, _ = cv2.projectPoints(pts3d, rvec, tvec, K, dist)
+    return np.linalg.norm(proj.reshape(-1,2) - pts2d, axis=1).mean()
+
+def compute_per_point_reproj_errors(pts3d, rvec, tvec, pts2d, K, dist):
+    proj, _ = cv2.projectPoints(pts3d, rvec, tvec, K, dist)
+    return np.linalg.norm(proj.reshape(-1,2) - pts2d, axis=1)
+
+def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=0.4):
+    """Two-round PnP with adaptive or fixed threshold.
+
+    Returns:
+        rvec, tvec, valid, inlier_mask, per_point_errors, round1_errors, used_threshold
+    """
+    # ============ Round 1: Initial estimate with all points ============
+    rvec1, tvec1, valid1 = solvePnP_IPPE(pts2d, pts3d, K, dist)
+    if not valid1:
+        return None, None, False, None, None, None, None
+
+    per_point_errors = compute_per_point_reproj_errors(pts3d, rvec1, tvec1, pts2d, K, dist)
+    round1_error = per_point_errors.mean()
+
+    # ============ Determine threshold ============
+    if USE_ADAPTIVE_THRESHOLD:
+        median_error = np.median(per_point_errors)
+        current_threshold = median_error * ADAPTIVE_MULTIPLIER
+        current_threshold = max(current_threshold, FIXED_ERROR_THRESHOLD)
+    else:
+        current_threshold = FIXED_ERROR_THRESHOLD
+
+    # ============ Filter inliers based on error threshold ============
+    inlier_mask = per_point_errors < current_threshold
+    n_inliers = inlier_mask.sum()
+
+    # If too few inliers, fall back to all points with higher threshold
+    if n_inliers < 4:
+        current_threshold = current_threshold * 2
+        inlier_mask = per_point_errors < current_threshold
+        n_inliers = inlier_mask.sum()
+
+    # ============ Round 2: Refine with inliers only ============
+    if n_inliers >= 4:
+        pts3d_inlier = pts3d[inlier_mask]
+        pts2d_inlier = pts2d[inlier_mask]
+        rvec2, tvec2, valid2 = solvePnP_IPPE(pts2d_inlier, pts3d_inlier, K, dist)
+        if valid2:
+            per_point_errors_round2 = compute_per_point_reproj_errors(pts3d, rvec2, tvec2, pts2d, K, dist)
+            return rvec2, tvec2, True, inlier_mask, per_point_errors_round2, round1_error, current_threshold
+        else:
+            return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
+    else:
+        return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
 
 def validate_cMo(cMo):
     """Check if cMo is physically valid"""
@@ -279,12 +341,19 @@ def main():
             ## Get cMo by SOLVEPNP_ITERATIVE
             # rvec, tvec, proj_back = matcher.estimate_pose(centers,None)
 
-            # Get cMo by SOLVEPNP_EPNP
+            # Get cMo by two-round PnP
             pts3d = matcher.obj_pts[matcher.r_idx]
             pts2d = centers
-            rvec, tvec, valid = solvePnP_IPPE(pts2d, pts3d, K, dist)
+            rvec, tvec, valid, inlier_mask, per_point_errors, round1_error, used_threshold = two_round_pnp(
+                pts2d, pts3d, K, dist, error_threshold=FIXED_ERROR_THRESHOLD)
             if not valid:
                 print(f"{frame_id} Frame: PnP failed, skipping pose estimation")
+                continue
+
+            # Check if frame should be rejected
+            all_points_exceed = np.all(per_point_errors > FRAME_REJECT_THRESHOLD)
+            if all_points_exceed:
+                print(f"  [REJECT] All points exceed threshold {FRAME_REJECT_THRESHOLD} px, frame rejected")
                 continue
             t3 = time.perf_counter_ns()
 
@@ -301,7 +370,7 @@ def main():
                 optimizer.set_initial_pose(bMo_init)
 
             if optimizer.get_frame_count() >= SLIDING_WINDOW_SIZE:
-                optimizer.remove_frame(frame_id - SLIDING_WINDOW_SIZE+1)
+                optimizer.remove_oldest_frame()
             t4 = time.perf_counter_ns()
 
             optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d)

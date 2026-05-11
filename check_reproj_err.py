@@ -6,14 +6,22 @@ Compares projected 3D points (using bMo_gt) with detected ellipse centers.
 import cv2 as cv
 from ultralytics import YOLO
 from gemiEd import *
+import time
+import json
 import numpy as np
 from scipy.spatial.transform import Rotation
 import os
-import re
 
 # ============ Config ============
-DATA_DIR = "dataset/save_data2"
-RESULT_DIR = "result/save_data2/reproj_err"
+DATA_DIR = "dataset/save_data3/20260511_120244"
+RESULT_DIR = "result/save_data3/20260511_120244/reproj_err"
+
+# =========== Read metadata config ===========
+BEGIN_FRAME_ID = 1180  # Skip frames with frame_id < this value
+
+# Frame rejection threshold - if ALL points have error > this, skip visualization
+FRAME_REJECT_THRESHOLD = 1.0   # pixels
+
 # Ground truth bMo_gt (base to object transform)
 bMo_gt = np.array([
     [0.010125, -0.02251, -0.9997, 987.29],
@@ -74,42 +82,59 @@ def compute_cMo_from_bMo(bMo, bMe, eMc):
 
 
 if __name__ == '__main__':
+    import json
+
+    os.makedirs(RESULT_DIR, exist_ok=True)
+
     # Load YOLO model
     model = YOLO("checkpoint/best.pt")
 
-    # Get sorted image and pose files
-    jpg_files = sorted(
-        [f for f in os.listdir(DATA_DIR) if f.endswith('.jpg') and f != 'temp'],
-        key=lambda x: int(re.search(r'(\d+)', x).group(1))
-    )
-    npy_files = {f.replace('.npy', ''): f for f in os.listdir(DATA_DIR)
-                 if f.endswith('.npy')}
+    # Load metadata from JSON
+    meta_path = os.path.join(DATA_DIR, "metadata.json")
+    with open(meta_path, 'r') as f:
+        metadata = json.load(f)
 
+    records = metadata['records']
     print("=" * 80)
     print("Reprojection Error Check using bMo_gt")
     print("=" * 80)
     print(f"\nbMo_gt:\n{bMo_gt}\n")
+    print(f"Loaded {len(records)} frames from {meta_path}")
 
     all_frame_errors = []
+    last_timestamp_ns = None
 
-    for jpg_file in jpg_files:
-        ts = jpg_file.replace('.jpg', '').replace('img_', '')
-        npy_name = 'pose_' + ts
-
-        if npy_name not in npy_files:
+    for record in records:
+        # Skip frames before BEGIN_FRAME_ID
+        frame_id_val = record['frame_id']
+        if frame_id_val < BEGIN_FRAME_ID :
             continue
+        # Get current frame timestamp
+        current_timestamp_ns = record['camera_timestamp_ns']
+
+        # Check time interval with previous frame
+        if last_timestamp_ns is not None:
+            time_diff_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
+            if time_diff_s < 0.1:
+                continue
+            elif time_diff_s > 1.0:
+                print(f"[WARN] Large timestamp gap: {time_diff_s:.2f}s between consecutive frames")
+
+        # Update last timestamp after potential wait
+        last_timestamp_ns = record['camera_timestamp_ns']
+
+        img_relative_path = record['image_path']
+        img_path = os.path.join(DATA_DIR, img_relative_path)
+
+        # Extract robot pose from JSON
+        bMe = np.array(record['pose_matrix_4x4']).reshape(4, 4)
 
         print("\n" + "-" * 80)
-        print(f"Frame: {jpg_file}")
+        print(f"Frame: frame_{frame_id_val:06d}.jpg")
         print("-" * 80)
 
         # Load image
-        img_path = os.path.join(DATA_DIR, jpg_file)
         img = cv2.imread(img_path)
-
-        # Load robot pose
-        robot_pose_path = os.path.join(DATA_DIR, npy_files[npy_name])
-        bMe = np.load(robot_pose_path)
 
         # Preprocess image
         img_float = img.astype(np.float32)
@@ -182,6 +207,13 @@ if __name__ == '__main__':
             print(f"\n  Mean error: {mean_error:.3f} px, Max error: {max_error:.3f} px")
             all_frame_errors.append(mean_error)
 
+            # ============ Check if frame should be rejected ============
+            # Frame is rejected if ALL points have error > FRAME_REJECT_THRESHOLD
+            all_points_exceed = np.all(np.array(per_point_errors) > FRAME_REJECT_THRESHOLD)
+            if all_points_exceed:
+                print(f"  [REJECT] All points exceed threshold {FRAME_REJECT_THRESHOLD} px, frame rejected")
+                continue
+
             # Visualization
             vis_img = img.copy()
 
@@ -203,7 +235,7 @@ if __name__ == '__main__':
             vis_roi = cv2.resize(vis_roi, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
 
             # Save result
-            save_path = os.path.join(RESULT_DIR, f"{ts}_reproj_err.png")
+            save_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_reproj_err.png")
             cv2.imwrite(save_path, vis_roi)
             cv2.imshow("Reproj Error", vis_roi)
             cv2.waitKey(1)

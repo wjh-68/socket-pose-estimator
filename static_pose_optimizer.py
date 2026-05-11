@@ -109,17 +109,18 @@ class StaticPoseOptimizer:
         self._frames.append(frame)
 
     def remove_frame(self, frame_index):
-        """Remove a frame by its user-defined index."""
-        for i, frame in enumerate(self._frames):
-            if frame['index'] == frame_index:
-                self._frames.pop(i)
-                return
-        raise ValueError(f"Frame with index {frame_index} not found")
+        """Remove a frame by its user-defined index. No-op if frame not found."""
+        self._frames = [f for f in self._frames if f['index'] != frame_index]
 
     def remove_frames(self, frame_indices):
         """Remove multiple frames by their user-defined indices."""
         indices_to_remove = set(frame_indices)
         self._frames = [f for f in self._frames if f['index'] not in indices_to_remove]
+
+    def remove_oldest_frame(self):
+        """Remove the oldest frame (first in list). No-op if empty."""
+        if self._frames:
+            self._frames.pop(0)
 
     def get_frame_by_index(self, frame_index):
         """Get frame data by its user-defined index."""

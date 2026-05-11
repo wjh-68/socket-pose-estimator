@@ -8,23 +8,34 @@ from ultralytics import YOLO
 import time
 from gemiEd import *
 from scipy.spatial.transform import Rotation
+import json
 import os
-import re
 import numpy as np
 
 # Load a model
 model = YOLO("checkpoint/best.pt")  # load an official model
 
 # ============ Config ============
-DATA_DIR = "dataset/save_data2"
-RESULT_DIR = "result/save_data2/test_pnp"
+DATA_DIR = "dataset/save_data3/20260511_120244"
+RESULT_DIR = "result/save_data3/20260511_120244/test_pnp"
+
+# =========== Read metadata config ===========
+BEGIN_FRAME_ID = 1180  # Skip frames with frame_id < this value
+
+# PnP threshold config
+USE_ADAPTIVE_THRESHOLD = True  # True = adaptive, False = fixed
+FIXED_ERROR_THRESHOLD = 0.7    # used when USE_ADAPTIVE_THRESHOLD = False
+ADAPTIVE_MULTIPLIER = 2.0      # threshold = median_error * multiplier
+
+# Frame rejection threshold - if mean reprojection error exceeds this, frame is rejected
+FRAME_REJECT_THRESHOLD = 1.0   # pixels - if ALL points have error > this, reject frame
 
 # Ground truth bMo_gt (base to object transform)
 bMo_gt = np.array([
-    [0.010125, -0.02251, -0.9997, 987.29],
-    [-0.99946, 0.030915, -0.010819, -293.39],
-    [0.031149, 0.99927, -0.022185, 493.44],
-    [0, 0, 0, 1]
+    [      0.133,   -0.087641,    -0.98723,      1025.3],
+    [    -0.9908,    0.013491,    -0.13467,     -299.64],
+    [   0.025122,     0.99606,    -0.08504,      539.07],
+    [          0,           0,           0,           1]
 ], dtype=np.float64)
 
 # Camera on robot end-effector (eye-to-hand extrinsic)
@@ -86,28 +97,36 @@ def compute_per_point_reproj_errors(pts3d, rvec, tvec, pts2d, K, dist):
     return np.linalg.norm(proj.reshape(-1, 2) - pts2d, axis=1)
 
 
-def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=5.0):
-    """Two-round PnP: first round to identify inliers, second round with inliers only.
+def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=0.5):
+    """Two-round PnP with adaptive or fixed threshold.
 
     Returns:
-        rvec, tvec, valid, inlier_mask, per_point_errors, round1_errors
+        rvec, tvec, valid, inlier_mask, per_point_errors, round1_errors, used_threshold
     """
     # ============ Round 1: Initial estimate with all points ============
     rvec1, tvec1, valid1 = solvePnP_IPPE(pts2d, pts3d, K, dist)
     if not valid1:
-        return None, None, False, None, None, None
+        return None, None, False, None, None, None, None
 
     per_point_errors = compute_per_point_reproj_errors(pts3d, rvec1, tvec1, pts2d, K, dist)
     round1_error = per_point_errors.mean()
 
+    # ============ Determine threshold ============
+    if USE_ADAPTIVE_THRESHOLD:
+        median_error = np.median(per_point_errors)
+        current_threshold = median_error * ADAPTIVE_MULTIPLIER
+        current_threshold = max(current_threshold, FIXED_ERROR_THRESHOLD)
+    else:
+        current_threshold = FIXED_ERROR_THRESHOLD
+
     # ============ Filter inliers based on error threshold ============
-    inlier_mask = per_point_errors < error_threshold
+    inlier_mask = per_point_errors < current_threshold
     n_inliers = inlier_mask.sum()
 
     # If too few inliers, fall back to all points with higher threshold
     if n_inliers < 4:
-        error_threshold = error_threshold * 2
-        inlier_mask = per_point_errors < error_threshold
+        current_threshold = current_threshold * 2
+        inlier_mask = per_point_errors < current_threshold
         n_inliers = inlier_mask.sum()
 
     # ============ Round 2: Refine with inliers only ============
@@ -117,11 +136,11 @@ def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=5.0):
         rvec2, tvec2, valid2 = solvePnP_IPPE(pts2d_inlier, pts3d_inlier, K, dist)
         if valid2:
             per_point_errors_round2 = compute_per_point_reproj_errors(pts3d, rvec2, tvec2, pts2d, K, dist)
-            return rvec2, tvec2, True, inlier_mask, per_point_errors_round2, round1_error
+            return rvec2, tvec2, True, inlier_mask, per_point_errors_round2, round1_error, current_threshold
         else:
-            return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error
+            return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
     else:
-        return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error
+        return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
 
 
 def validate_cMo(cMo):
@@ -211,40 +230,61 @@ def draw_dashed_line(img, pt1, pt2, color, thickness):
 
 
 if __name__ == '__main__':
-    # Get sorted image and pose files
-    jpg_files = sorted(
-        [f for f in os.listdir(DATA_DIR) if f.endswith('.jpg') and f != 'temp'],
-        key=lambda x: int(re.search(r'(\d+)', x).group(1))
-    )
-    npy_files = {f.replace('.npy', ''): f for f in os.listdir(DATA_DIR)
-                 if f.endswith('.npy')}
+    import json
 
+    os.makedirs(RESULT_DIR, exist_ok=True)
+
+    # Load metadata from JSON
+    meta_path = os.path.join(DATA_DIR, "metadata.json")
+    with open(meta_path, 'r') as f:
+        metadata = json.load(f)
+
+    records = metadata['records']
     print("=" * 80)
     print("PnP Pose Estimation Test - vs Ground Truth")
     print("=" * 80)
     print(f"\nbMo_gt:\n{bMo_gt}\n")
+    print(f"Loaded {len(records)} frames from {meta_path}")
 
-    frame_id = 1
+    frame_id = 0
     all_results = []
+    last_timestamp_ns = None
 
-    for jpg_file in jpg_files:
-        ts = jpg_file.replace('.jpg', '').replace('img_', '')
-        npy_name = 'pose_' + ts
-
-        if npy_name not in npy_files:
+    for record in records:
+        # Skip frames before BEGIN_FRAME_ID
+        frame_id_val = record['frame_id']
+        if frame_id_val < BEGIN_FRAME_ID :
             continue
+        # Skip frames with large time diff
+        time_diff = record['time_diff_ns']/1e9
+        if time_diff > 0.05:
+            continue
+        # Get current frame timestamp
+        current_timestamp_ns = record['camera_timestamp_ns']
+
+        # Check time interval with previous frame
+        if last_timestamp_ns is not None:
+            time_interval_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
+            if time_interval_s < 0.1:
+                continue
+            elif time_interval_s > 1.0:
+                print(f"[WARN] Large timestamp gap: {time_interval_s:.2f}s between consecutive frames")
+
+        # Update last timestamp after potential wait
+        last_timestamp_ns = record['camera_timestamp_ns']
+
+        img_relative_path = record['image_path']
+        img_path = os.path.join(DATA_DIR, img_relative_path)
+
+        # Extract robot pose from JSON
+        bMe = np.array(record['pose_matrix_4x4']).reshape(4, 4)
 
         print("\n" + "-" * 80)
-        print(f"Frame {frame_id}: {jpg_file}")
+        print(f"Frame {frame_id}: frame_{frame_id_val:06d}.jpg")
         print("-" * 80)
 
         # Load image
-        img_path = os.path.join(DATA_DIR, jpg_file)
         img = cv2.imread(img_path)
-
-        # Load robot pose
-        robot_pose_path = os.path.join(DATA_DIR, npy_files[npy_name])
-        bMe = np.load(robot_pose_path)
 
         # Preprocess image
         img_float = img.astype(np.float32)
@@ -291,19 +331,27 @@ if __name__ == '__main__':
         pts2d = centers
 
         # ============ Two-round PnP estimation ============
-        rvec, tvec, valid, inlier_mask, per_point_errors, round1_error = two_round_pnp(
-            pts2d, pts3d, K, dist, error_threshold=0.4)
+        rvec, tvec, valid, inlier_mask, per_point_errors, round1_error, used_threshold = two_round_pnp(
+            pts2d, pts3d, K, dist, error_threshold=FIXED_ERROR_THRESHOLD)
         if not valid:
             print(f"  PnP failed, skipping")
             continue
 
         n_inliers = inlier_mask.sum() if inlier_mask is not None else 0
+        pnp_error = per_point_errors.mean()
 
         # Print per-point reprojection errors
-        print(f"  Per-point reprojection errors (px):")
+        print(f"  Per-point reprojection errors (px), threshold={used_threshold:.3f}:")
         for i, (err, pt_name) in enumerate(zip(per_point_errors, obj_pt_names[:len(per_point_errors)])):
             marker = '[INLIER]' if (inlier_mask is not None and inlier_mask[i]) else '[OUTLIER]'
             print(f"    Point {i} ({pt_name}): {err:7.3f} px {marker}")
+
+        # ============ Check if frame should be rejected ============
+        # Frame is rejected if ALL points have error > FRAME_REJECT_THRESHOLD
+        all_points_exceed = np.all(per_point_errors > FRAME_REJECT_THRESHOLD)
+        if all_points_exceed:
+            print(f"  [REJECT] All points exceed threshold {FRAME_REJECT_THRESHOLD} px, frame rejected")
+            continue
 
         # ============ Build cMo from two-round PnP result ============
         cMo = np.eye(4)
@@ -366,8 +414,7 @@ if __name__ == '__main__':
         # Store result
         all_results.append({
             'frame': frame_id,
-            'jpg_file': jpg_file,
-            'ts': ts,
+            'frame_id_val': frame_id_val,
             'bMo': bMo.copy(),
             'bMo_ba': bMo_ba.copy(),
             'cMo': cMo.copy(),
@@ -414,13 +461,15 @@ if __name__ == '__main__':
             else:
                 color = (255, 255, 0)     # Cyan = unknown/no mask
             cv2.circle(vis_img, (int(x), int(y)), 3, color, -1)
+            cv2.putText(vis_img, str(i), (int(x)+5, int(y)-5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
         # Crop and resize ROI
         vis_roi = vis_img[roi_y_min:roi_y_max, roi_x_min:roi_x_max]
         vis_roi = cv2.resize(vis_roi, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
 
         # Save result
-        save_path = os.path.join(RESULT_DIR, f"{ts}_pnp_test.png")
+        save_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_pnp_test.png")
         cv2.imwrite(save_path, vis_roi)
 
         cv2.imshow("PnP Test", vis_roi)

@@ -7,10 +7,10 @@ median, weighted average, and RANSAC-filtered mean.
 import cv2 as cv
 from ultralytics import YOLO
 import time
+import json
 from gemiEd import *
 from scipy.spatial.transform import Rotation
 import os
-import re
 import numpy as np
 from static_pose_optimizer import StaticPoseOptimizer, pose_to_euler_tvec
 
@@ -18,11 +18,12 @@ from static_pose_optimizer import StaticPoseOptimizer, pose_to_euler_tvec
 model = YOLO("checkpoint/best.pt")
 
 # ============ Config ============
-# DATA_DIR = "dataset/save_data2"
-# RESULT_DIR = "result/save_data2/pose_refine"
-DATA_DIR = "dataset/save_data9"
-RESULT_DIR = "result/save_data9/pose_refine"
+DATA_DIR = "dataset/save_data3/20260511_120244"
+RESULT_DIR = "result/save_data3/20260511_120244/pose_refine"
 SLIDING_WINDOW_SIZE = 8
+
+# =========== Read metadata config ===========
+BEGIN_FRAME_ID = 1180  # Skip frames with frame_id < this value
 
 # PnP threshold config
 USE_ADAPTIVE_THRESHOLD = True  # True = adaptive, False = fixed
@@ -325,23 +326,16 @@ def draw_dashed_line(img, pt1, pt2, color, thickness):
 
 
 if __name__ == '__main__':
+    import json
+
     os.makedirs(RESULT_DIR, exist_ok=True)
 
-    # Get sorted image and pose files
-    
-    # npy_files = {f for f in os.listdir(DATA_DIR)
-    #              if f.endswith('.npy')}
-    # img_files = sorted(
-    #         [f for f in os.listdir(DATA_DIR) if f.endswith('.jpg') and f != 'temp'],
-    #         key=lambda x: int(re.search(r'(\d+)', x).group(1))
-    #     )
-    # ts_list = [f.replace('.jpg', '').replace('img_', '') for f in img_files]
-    
-    npy_files = sorted(
-            [f for f in os.listdir(DATA_DIR) if f.endswith('.npy')])
-    img_files = {f for f in os.listdir(DATA_DIR) if f.endswith('.png') and f != 'temp'}
-    ts_list = [f.replace('.npy', '') for f in npy_files]
-    
+    # Load metadata from JSON
+    meta_path = os.path.join(DATA_DIR, "metadata.json")
+    with open(meta_path, 'r') as f:
+        metadata = json.load(f)
+
+    records = metadata['records']
     print("=" * 80)
     print("Chargeport Pose Refine - Sliding Window Pose Estimation")
     print("=" * 80)
@@ -351,6 +345,7 @@ if __name__ == '__main__':
     print(f"  Fixed threshold: {FIXED_ERROR_THRESHOLD}")
     print(f"  Adaptive multiplier: {ADAPTIVE_MULTIPLIER}")
     print(f"  Frame reject threshold: {FRAME_REJECT_THRESHOLD} px")
+    print(f"Loaded {len(records)} frames from {meta_path}")
 
     # ============ Sliding window state ============
     window_bMo = []           # list of bMo matrices
@@ -368,27 +363,39 @@ if __name__ == '__main__':
 
     frame_id = 1
     all_results = []
+    last_timestamp_ns = None
 
-    for ts in ts_list:
-        # img_file = f"img_{ts}.jpg"
-        # npy_file = f"pose_{ts}.npy"
-        img_file = f"{ts}.png"
-        npy_file = f"{ts}.npy"
-        if img_file not in img_files or npy_file not in npy_files:
-            print(f"  Missing files for timestamp {ts}, skipping")
+    for record in records:
+        # Skip frames before BEGIN_FRAME_ID
+        frame_id_val = record['frame_id']
+        if frame_id_val < BEGIN_FRAME_ID:
             continue
+        # Get current frame timestamp
+        current_timestamp_ns = record['camera_timestamp_ns']
+
+        # Check time interval with previous frame
+        if last_timestamp_ns is not None:
+            time_diff_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
+            if time_diff_s < 0.1:
+                continue
+            elif time_diff_s > 1.0:
+                print(f"[WARN] Large timestamp gap: {time_diff_s:.2f}s between consecutive frames")
+
+        # Update last timestamp after potential wait
+        last_timestamp_ns = record['camera_timestamp_ns']
+
+        img_relative_path = record['image_path']
+        img_path = os.path.join(DATA_DIR, img_relative_path)
+
+        # Extract robot pose from JSON
+        bMe = np.array(record['pose_matrix_4x4']).reshape(4, 4)
 
         print("\n" + "-" * 80)
-        print(f"Frame {frame_id}: {img_file}")
+        print(f"Frame {frame_id}: frame_{frame_id_val:06d}.jpg")
         print("-" * 80)
 
         # Load image
-        img_path = os.path.join(DATA_DIR, img_file)
         img = cv2.imread(img_path)
-
-        # Load robot pose
-        robot_pose_path = os.path.join(DATA_DIR, npy_file)
-        bMe = np.load(robot_pose_path)
 
         # Preprocess image
         img_float = img.astype(np.float32)
@@ -487,7 +494,7 @@ if __name__ == '__main__':
             window_bMo.append(bMo.copy())
             window_rotvecs.append(rvec_bMo.flatten().copy())
             window_errors.append(pnp_error)
-            window_img_files.append(img_file)
+            window_img_files.append(f"frame_{frame_id_val:06d}.jpg")
             window_frame_ids.append(frame_id)
 
             # Remove oldest frame if window is full
@@ -546,6 +553,8 @@ if __name__ == '__main__':
             else:
                 color = (255, 255, 0)     # Cyan = unknown/no mask
             cv2.circle(vis_img, (int(x), int(y)), 3, color, -1)
+            cv2.putText(vis_img, str(i), (int(x)+5, int(y)-5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
         # Draw text indicating frame status
         status_text = f"Frame {frame_id} | Accepted: {accepted_frames} | Rejected: {rejected_frames}"
@@ -564,7 +573,7 @@ if __name__ == '__main__':
         vis_roi = cv2.resize(vis_roi, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
 
         # Save result
-        save_path = os.path.join(RESULT_DIR, f"{ts}_refine.png")
+        save_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_refine.png")
         cv2.imwrite(save_path, vis_roi)
 
         cv2.imshow("Pose Refine", vis_roi)
@@ -573,8 +582,7 @@ if __name__ == '__main__':
         # Store result for summary
         all_results.append({
             'frame': frame_id,
-            'img_file': img_file,
-            'ts': ts,
+            'frame_id_val': frame_id_val,
             'bMo': bMo.copy(),
             'bMo_ba': bMo_ba.copy(),
             'cMo': cMo.copy(),
