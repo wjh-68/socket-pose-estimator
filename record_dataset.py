@@ -18,7 +18,7 @@ ROBOT_PORT = 30004
 CAMERA_ID = 0
 
 # ======== Recording Config =========
-OUTPUT_DIR = "dataset/recording"
+OUTPUT_DIR = "dataset/save_data3"
 SYNC_TOLERANCE_NS = 20_000_000  # 20ms 时间差容忍
 SAVE_INVALID = True  # True=保存所有帧(含时间差大的), False=只保存同步帧
 MAX_FRAMES = 5000    # 最大录制帧数，-1=无限
@@ -75,6 +75,8 @@ def read_camera():
             with frame_lock:
                 latest_frame = frame.copy()
                 latest_frame_ts = time.perf_counter_ns()
+        
+        time.sleep(0.02)  # 50Hz 采样
 
     cap.release()
 
@@ -85,13 +87,21 @@ def read_robot():
         if robot_rpc_client is None or robot_name is None:
             time.sleep(0.01)
             continue
-        pose, raw_tcp = get_robot_pose(robot_rpc_client, robot_name)
-        with pose_lock:
-            latest_pose = pose
-            latest_pose_ts = time.perf_counter_ns()
+        try:
+            pose, raw_tcp = get_robot_pose(robot_rpc_client, robot_name)
+            with pose_lock:
+                latest_pose = pose
+                latest_pose_ts = time.perf_counter_ns()
+        except Exception as e:
+            # 捕获 RPC 超时等异常，打印并短暂退避，线程不退出
+            print(f"[Robot] read error: {e}")
+            time.sleep(0.01)
+            continue
+        time.sleep(0.005)  # 200Hz 采样
 
 def get_synced_pair():
-    """返回 (frame, pose, time_diff_ns) 三元组，任意一个为 None 则同步失败"""
+    """返回 (frame, pose, frame_ts_ns, pose_ts_ns, time_diff_ns) 五元组，
+       任意 frame/pose 为 None 则同步失败"""
     with frame_lock:
         frame = latest_frame
         frame_ts = latest_frame_ts
@@ -100,9 +110,9 @@ def get_synced_pair():
         pose_ts = latest_pose_ts
 
     if frame is None or pose is None:
-        return None, None, -1
+        return None, None, None, None, -1
 
-    return frame, pose, abs(frame_ts - pose_ts)
+    return frame, pose, frame_ts, pose_ts, abs(frame_ts - pose_ts)
 
 # ===================== 主程序 =====================
 def main():
@@ -140,87 +150,93 @@ def main():
     # 录制循环
     metadata_list = []
     sync_error_count = 0
+    synced_count = 0
     last_print_time = time.time()
 
     print("[Recording] Press 'q' to quit, 'p' to pause/resume")
     paused = False
 
-    while recording:
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-        elif key == ord('p'):
-            paused = not paused
-            print(f"[Recording] {'Paused' if paused else 'Resumed'}")
+    try:
+        while recording:
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+            elif key == ord('p'):
+                paused = not paused
+                print(f"[Recording] {'Paused' if paused else 'Resumed'}")
 
-        if paused:
-            time.sleep(0.1)
-            continue
+            if paused:
+                time.sleep(0.1)
+                continue
 
-        frame, pose, diff_ns = get_synced_pair()
-        if frame is None:
-            time.sleep(0.01)
-            continue
+            frame, pose, frame_ts, pose_ts, diff_ns = get_synced_pair()
+            if frame is None:
+                time.sleep(0.01)
+                continue
 
-        # 同步判定
-        synced = diff_ns <= SYNC_TOLERANCE_NS
+            # 同步判定
+            synced = diff_ns <= SYNC_TOLERANCE_NS
 
-        if not synced and not SAVE_INVALID:
-            sync_error_count += 1
-            continue
+            if synced:
+                synced_count += 1
+            elif not SAVE_INVALID:
+                sync_error_count += 1
+                continue
 
-        # 保存图像
-        img_path = os.path.join(img_dir, f"frame_{frame_count:06d}.jpg")
-        cv2.imwrite(img_path, frame)
+            # 保存图像
+            img_path = os.path.join(img_dir, f"frame_{frame_count:06d}.jpg")
+            cv2.imwrite(img_path, frame)
 
-        # 保存元数据
-        euler, tvec = euler_from_pose(pose)
-        meta = {
-            "frame_id": frame_count,
-            "image_path": f"images/frame_{frame_count:06d}.jpg",
-            "camera_timestamp_ns": int(time.perf_counter_ns()),  # 保存时的硬件时间戳
-            "pose_timestamp_ns": int(pose_ts_original() if False else 0),  # 机器人位姿时间戳
-            "time_diff_ns": int(diff_ns),
-            "synced": synced,
-            "pose_euler_xyz": euler,
-            "pose_translation_mm": tvec,
-            "pose_matrix_4x4": pose_to_list(pose)
-        }
-        metadata_list.append(meta)
+            # 保存元数据
+            euler, tvec = euler_from_pose(pose)
+            meta = {
+                "frame_id": frame_count,
+                "image_path": f"images/frame_{frame_count:06d}.jpg",
+                "camera_timestamp_ns": int(frame_ts) if frame_ts is not None else 0,
+                "pose_timestamp_ns": int(pose_ts) if pose_ts is not None else 0,
+                "time_diff_ns": int(diff_ns),
+                "synced": bool(synced),
+                "pose_euler_xyz": euler,
+                "pose_translation_mm": tvec,
+                "pose_matrix_4x4": pose_to_list(pose)
+            }
+            metadata_list.append(meta)
 
-        frame_count += 1
+            frame_count += 1
 
-        # 定期打印状态
-        if time.time() - last_print_time >= 2.0:
-            sync_rate = (frame_count - sync_error_count) / frame_count * 100 if frame_count > 0 else 0
-            print(f"[Status] frames={frame_count}, synced={sync_rate:.1f}%, diff={diff_ns/1e6:.2f}ms")
-            last_print_time = time.time()
+            # 定期打印状态
+            if time.time() - last_print_time >= 2.0:
+                sync_rate = (synced_count / frame_count * 100) if frame_count > 0 else 0
+                print(f"[Status] frames={frame_count}, synced={sync_rate:.1f}%, diff={diff_ns/1e6:.2f}ms")
+                last_print_time = time.time()
 
-        # 限制最大帧数
-        if MAX_FRAMES > 0 and frame_count >= MAX_FRAMES:
-            print(f"[Recording] Reached max frames ({MAX_FRAMES})")
-            break
+            # 限制最大帧数
+            if MAX_FRAMES > 0 and frame_count >= MAX_FRAMES:
+                print(f"[Recording] Reached max frames ({MAX_FRAMES})")
+                break
+    except KeyboardInterrupt:
+        print("[Recording] Interrupted by user")
+    finally:
+        # 停止采集线程
+        recording = False
+        cam_thread.join(timeout=2)
+        robot_thread.join(timeout=2)
 
-    # 停止采集线程
-    recording = False
-    cam_thread.join(timeout=2)
-    robot_thread.join(timeout=2)
+        # 保存元数据 JSON
+        meta_path = os.path.join(session_dir, "metadata.json")
+        with open(meta_path, 'w') as f:
+            json.dump({
+                "session": timestamp,
+                "total_frames": frame_count,
+                "sync_tolerance_ns": SYNC_TOLERANCE_NS,
+                "camera_setting": {
+                    "width": 2560, "height": 1440, "brightness": 128
+                },
+                "records": metadata_list
+            }, f, indent=2)
 
-    # 保存元数据 JSON
-    meta_path = os.path.join(session_dir, "metadata.json")
-    with open(meta_path, 'w') as f:
-        json.dump({
-            "session": timestamp,
-            "total_frames": frame_count,
-            "sync_tolerance_ns": SYNC_TOLERANCE_NS,
-            "camera_setting": {
-                "width": 2560, "height": 1440, "brightness": 128
-            },
-            "records": metadata_list
-        }, f, indent=2)
-
-    print(f"[Done] Saved {frame_count} frames to {session_dir}")
-    print(f"[Done] Metadata: {meta_path}")
+        print(f"[Done] Saved {frame_count} frames to {session_dir}")
+        print(f"[Done] Metadata: {meta_path}")
 
 if __name__ == '__main__':
     main()
