@@ -87,6 +87,24 @@ def plot_euler(eulers, session):
     plt.tight_layout()
     plt.show()
 
+def plot_xyz_vs_frame(positions, session):
+    """Plot X, Y, Z position components vs frame index."""
+    fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+    labels = ['X', 'Y', 'Z']
+    colors = ['r', 'g', 'b']
+    frames = np.arange(len(positions))
+
+    for i, (ax, label, color) in enumerate(zip(axes, labels, colors)):
+        ax.plot(frames, positions[:, i], color=color, linewidth=0.5)
+        ax.set_ylabel(f'{label} (mm)')
+        ax.set_title(f'Position {label} vs Frame')
+        ax.grid(True)
+
+    axes[-1].set_xlabel('Frame')
+    fig.suptitle(f'Position Components vs Frame - {session}', fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python visualize_pose.py <pose_data.json or metadata.json>")
@@ -102,6 +120,9 @@ def main():
           f"Z[{positions[:,2].min():.1f}, {positions[:,2].max():.1f}]")
 
     plot_trajectory(positions, session, freq)
+
+    # X, Y, Z vs Frame
+    plot_xyz_vs_frame(positions, session)
 
     eulers = extract_eulers(records)
     if eulers is not None:
