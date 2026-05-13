@@ -34,13 +34,18 @@ BEGIN_FRAME_ID = 1180
 
 # PnP thresholds
 ADAPTIVE_MULTIPLIER = 2.0
-FIXED_ERROR_THRESHOLD = 0.4
+FIXED_ERROR_THRESHOLD = 0.8
 FRAME_REJECT_THRESHOLD = 1.0
 
-# Kalman filter config
-KALMAN_PROCESS_NOISE_POS = 0.001
-KALMAN_PROCESS_NOISE_VEL = 0.01
-KALMAN_MEASUREMENT_NOISE = 1.5
+# Kalman filter config (6D anisotropic noise for planar scene)
+# [qx, qy, qz, qrx, qry, qrz]
+# - qx, qy: small (XY motion well observable)
+# - qz: larger (depth less observable from vertical view)
+# - qrx, qry: larger (tilt less observable)
+# - qrz: small (yaw about optical axis well observable)
+KALMAN_PROCESS_NOISE = (0.1, 0.1, 0.5, 0.01, 0.01, 0.05)  # position std dev (mm)
+KALMAN_PROCESS_NOISE_VEL = (0.05, 0.05, 0.2, 0.005, 0.005, 0.02)  # velocity random walk
+KALMAN_MEASUREMENT_NOISE = 2.0  # pixels
 
 # Camera on robot end-effector (eye-to-hand extrinsic)
 eMc = np.array([
@@ -95,7 +100,8 @@ def two_round_pnp(pts2d, pts3d, K, dist):
 
     # Adaptive threshold
     median_error = np.median(per_point_errors)
-    threshold = max(median_error * ADAPTIVE_MULTIPLIER, FIXED_ERROR_THRESHOLD)
+    # threshold = max(median_error * ADAPTIVE_MULTIPLIER, FIXED_ERROR_THRESHOLD)
+    threshold = FIXED_ERROR_THRESHOLD
 
     inlier_mask = per_point_errors < threshold
     n_inliers = inlier_mask.sum()
@@ -151,10 +157,10 @@ if __name__ == '__main__':
     # Initialize Kalman filter
     kalman = RobustKalmanFilterPoseEstimator(
         K, dist,
-        process_noise_pos=KALMAN_PROCESS_NOISE_POS,
+        process_noise=KALMAN_PROCESS_NOISE,
         process_noise_vel=KALMAN_PROCESS_NOISE_VEL,
         measurement_noise=KALMAN_MEASUREMENT_NOISE,
-        max_reproj_error=10.0
+        max_innovation=15.0
     )
 
     # Also initialize static optimizer for comparison
@@ -170,8 +176,7 @@ if __name__ == '__main__':
     records = metadata['records']
     print(f"Loaded {len(records)} frames from {meta_path}")
 
-    frame_id = 1
-    processed_frames = 0
+    frame_id = 0
     last_timestamp_ns = None
     last_kalman_bMo = None
     last_static_bMo = None
@@ -186,11 +191,7 @@ if __name__ == '__main__':
         frame_id_val = record['frame_id']
         if frame_id_val < BEGIN_FRAME_ID:
             continue
-        if MAX_FRAMES > 0 and processed_frames >= MAX_FRAMES:
-            print(f"\nReached max frames limit ({MAX_FRAMES})")
-            break
-        processed_frames += 1
-
+        
         current_timestamp_ns = record['camera_timestamp_ns']
         if last_timestamp_ns is not None:
             time_diff_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
@@ -199,6 +200,10 @@ if __name__ == '__main__':
             if time_diff_s > 1.0:
                 print(f"[WARN] Large timestamp gap: {time_diff_s:.2f}s")
         last_timestamp_ns = current_timestamp_ns
+
+        if MAX_FRAMES > 0 and frame_id >= MAX_FRAMES:
+            print(f"\nReached max frames limit ({MAX_FRAMES})")
+            break
 
         img_relative_path = record['image_path']
         img_path = os.path.join(DATA_DIR, img_relative_path)
@@ -217,7 +222,8 @@ if __name__ == '__main__':
         img_bright = np.clip(img_float - 50, 0, 255).astype(np.uint8)
 
         result = getInferResult(model, img_bright)
-        if result.shape[0] == 0:
+        if result.shape[0] == 0 or result.shape[1] == 0:
+            print(f"  No detection, skipping")
             continue
 
         roi = img[int(result[0][1]):int(result[0][3]),
@@ -279,10 +285,12 @@ if __name__ == '__main__':
         bMo_init = robot_pose @ eMc @ cMo
 
         # ========== Kalman Filter Update ==========
-        cMo_kalman, errors_kalman, inlier_mask_kalman, is_valid = kalman.update_with_robust(
-            pts2d, pts3d, robot_pose, eMc, inlier_mask=None)
+        timestamp_ns = record['camera_timestamp_ns']
+        cMo_kalman, rvec_kf, tvec_kf, errors_kalman, is_updated = kalman.update_with_observation(
+            pts2d, pts3d, rvec_pnp=rvec, tvec_pnp=tvec,
+            inlier_mask=inlier_mask, timestamp=timestamp_ns)
 
-        if is_valid and cMo_kalman is not None:
+        if is_updated and cMo_kalman is not None:
             bMo_kalman = kalman.get_bMo(robot_pose, eMc)
             print(f"Kalman bMo: {pose_to_euler_tvec(bMo_kalman)}")
             print(f"Kalman cMo: {pose_to_euler_tvec(cMo_kalman)}")
@@ -445,4 +453,4 @@ if __name__ == '__main__':
             plt.close(fig2)
 
     print(f"\nResults saved to {RESULT_DIR}")
-    print(f"Processed {processed_frames} frames")
+    print(f"Processed {frame_id} frames")

@@ -6,10 +6,16 @@ State vector: [rotation_vector(3), translation_vector(3), velocity_rot(3), veloc
 - 6 DoF pose + 6 DoF velocity = 12 dimensional state
 
 Prediction: x_pred = F @ x + B @ u (velocity-based prediction)
-Observation: z = H @ x (but we use 2D-3D reprojection error as innovation)
+Observation: z = H @ x (using 2D-3D reprojection error as innovation)
 
 The Kalman filter estimates camera pose cMo, which is then combined with
 robot_pose to compute bMo = robot_pose @ eMc @ cMo
+
+For planar scenes (object on Z=0 plane, camera observing vertically):
+- X, Y translation: well observable (direct mapping to image)
+- Z (depth): poorly observable (small error -> large reprojection error)
+- rx, ry (tilt): poorly observable (similar to depth)
+- rz (yaw): well observable (rotation about optical axis)
 """
 
 import numpy as np
@@ -19,30 +25,29 @@ import cv2
 
 class KalmanFilterPoseEstimator:
     """
-    Kalman filter for camera pose estimation.
+    Kalman filter for camera pose estimation with anisotropic noise.
 
     State: [rvec(3), tvec(3), vrvec(3), vtvec(3)] - 12 dimensions
     - rvec, tvec: camera pose (rotation vector + translation)
     - vrvec, vtvec: angular and translational velocities
 
-    Prediction step:
-        pose_pred = pose_prev + velocity * dt
-        velocity_pred = velocity_prev (constant velocity model)
-
-    Update step:
-        Uses 2D-3D correspondences to compute innovation via reprojection error
-        Linearized observation model via Jacobian of reprojection
+    Noise configuration for planar scenes:
+        - process_noise: 6D vector [qx, qy, qz, qrx, qry, qrz]
+        - measurement_noise: scalar or 2D per-point noise
     """
 
-    def __init__(self, K, dist, process_noise_pos=0.001, process_noise_vel=0.01,
-                 measurement_noise=1.0):
+    def __init__(self, K, dist,
+                 process_noise=(0.1, 0.1, 0.5, 0.01, 0.01, 0.05),
+                 process_noise_vel=(0.05, 0.05, 0.2, 0.005, 0.005, 0.02),
+                 measurement_noise=2.0):
         """
         Args:
             K: Camera intrinsic matrix (3x3)
             dist: Distortion coefficients (5,)
-            process_noise_pos: Process noise for position/rotation (std dev)
-            process_noise_vel: Process noise for velocity (std dev)
-            measurement_noise: Measurement noise for reprojection (std dev in pixels)
+            process_noise: 6D process noise std dev [qx, qy, qz, qrx, qry, qrz]
+                         Higher for poorly observable directions (Z, rx, ry)
+            process_noise_vel: 6D velocity random walk noise std dev
+            measurement_noise: Measurement noise for reprojection (pixels)
         """
         self.K = np.array(K, dtype=np.float64)
         self.dist = np.array(dist, dtype=np.float64)
@@ -57,44 +62,47 @@ class KalmanFilterPoseEstimator:
 
         # State: [rvec(3), tvec(3), vrvec(3), vtvec(3)]
         self.state = np.zeros(self.state_dim, dtype=np.float64)
-        self.velocity = np.zeros(6, dtype=np.float64)
 
         # Covariance matrix
         self.P = np.eye(self.state_dim, dtype=np.float64) * 1e-3
 
-        # Process noise parameters
-        self.q_pos = process_noise_pos
-        self.q_vel = process_noise_vel
+        # Process noise parameters (6D, anisotropic)
+        self.q_pos = np.array(process_noise, dtype=np.float64)  # [qx, qy, qz, qrx, qry, qrz]
+        self.q_vel = np.array(process_noise_vel, dtype=np.float64)
 
-        # Measurement noise (reprojection)
+        # Measurement noise
         self.r_measurement = measurement_noise
 
         # State initialized flag
         self.initialized = False
+        self.last_update_time = None
 
         # History for visualization
         self.pose_history = []
-        self.velocity_history = []
         self.error_history = []
 
-    def initialize(self, rvec, tvec):
+        # Track update status for diagnostics
+        self.last_update_success = False
+
+    def initialize(self, rvec, tvec, timestamp=None):
         """
         Initialize the filter with an initial pose estimate.
 
         Args:
             rvec: Initial rotation vector (3,)
             tvec: Initial translation vector (3,)
+            timestamp: Optional timestamp for dt calculation
         """
         self.state[:3] = np.array(rvec, dtype=np.float64).flatten()
         self.state[3:6] = np.array(tvec, dtype=np.float64).flatten()
-        self.state[6:9] = np.zeros(3, dtype=np.float64)  # zero angular velocity
-        self.state[9:12] = np.zeros(3, dtype=np.float64)  # zero translation velocity
+        self.state[6:9] = np.zeros(3, dtype=np.float64)
+        self.state[9:12] = np.zeros(3, dtype=np.float64)
 
-        self.velocity = np.zeros(6, dtype=np.float64)
         self.P = np.eye(self.state_dim, dtype=np.float64) * 1e-3
         self.initialized = True
+        self.last_update_time = timestamp
+        self.last_update_success = True
         self.pose_history = []
-        self.velocity_history = []
         self.error_history = []
 
     def predict(self, dt):
@@ -104,65 +112,51 @@ class KalmanFilterPoseEstimator:
         Args:
             dt: Time delta in seconds
         """
-        if not self.initialized:
+        if not self.initialized or dt <= 0:
             return
 
         # State transition: pose += velocity * dt
-        # Rotation part (exponential map for rotation)
         rvec = self.state[:3]
         vrvec = self.state[6:9]
-
-        # For small dt, add rotvec perturbation
         delta_rvec = vrvec * dt
         rvec_pred = rvec + delta_rvec
 
-        # Translation part
         tvec = self.state[3:6]
         vtvec = self.state[9:12]
         tvec_pred = tvec + vtvec * dt
 
-        # Velocity stays constant (random walk handled by process noise)
-        vrvec_pred = self.state[6:9]
-        vtvec_pred = self.state[9:12]
-
         self.state[:3] = rvec_pred
         self.state[3:6] = tvec_pred
-        self.state[6:9] = vrvec_pred
-        self.state[9:12] = vtvec_pred
 
         # State transition Jacobian (F)
         F = np.eye(self.state_dim, dtype=np.float64)
-        # d(rvec_next)/d(vrvec) = dt * I
         F[:3, 6:9] = np.eye(3, dtype=np.float64) * dt
-        # d(tvec_next)/d(vtvec) = dt * I
         F[3:6, 9:12] = np.eye(3, dtype=np.float64) * dt
 
-        # Process noise
+        # Anisotropic process noise
         Q = np.zeros((self.state_dim, self.state_dim), dtype=np.float64)
-        # Position/rotation noise
-        Q[:6, :6] = np.eye(6, dtype=np.float64) * (self.q_pos ** 2)
-        # Velocity noise (random walk)
-        Q[6:12, 6:12] = np.eye(6, dtype=np.float64) * ((self.q_vel * dt) ** 2)
+        # Position/rotation noise (diagonal, anisotropic)
+        Q[:3, :3] = np.diag(self.q_pos[3:] ** 2)      # rotation noise
+        Q[3:6, 3:6] = np.diag(self.q_pos[:3] ** 2)    # translation noise
+        # Velocity noise (random walk, diagonal)
+        Q[6:9, 6:9] = np.diag((self.q_vel[3:] ** 2) * dt)
+        Q[9:12, 9:12] = np.diag((self.q_vel[:3] ** 2) * dt)
 
         # Covariance prediction
         self.P = F @ self.P @ F.T + Q
 
     def compute_reprojection_jacobian(self, pts3d, rvec, tvec):
         """
-        Compute Jacobian of reprojection w.r.t. state.
+        Compute Jacobian of reprojection w.r.t. state (only pose params).
 
         Returns:
-            J: Jacobian matrix (2N x state_dim)
+            J: Jacobian matrix (2N x 6) - only for pose params
         """
         N = pts3d.shape[0]
-        J = np.zeros((2 * N, self.state_dim), dtype=np.float64)
+        J = np.zeros((2 * N, 6), dtype=np.float64)
 
-        # Project points to get current reprojection
-        proj = self._project(pts3d, rvec, tvec)
-
-        # Compute Jacobian numerically using central difference
         eps = 1e-6
-        for i in range(6):  # Only pose params affect reprojection, not velocity
+        for i in range(6):
             state_plus = self.state.copy()
             state_plus[i] += eps
             rvec_p = state_plus[:3]
@@ -179,17 +173,17 @@ class KalmanFilterPoseEstimator:
 
         return J
 
-    def update(self, pts2d, pts3d, outlier_threshold=5.0):
+    def update(self, pts2d, pts3d, measurement_noise=None):
         """
         Update step using 2D-3D correspondences.
 
         Args:
             pts2d: Observed 2D points (Nx2)
             pts3d: Corresponding 3D points (Nx3)
-            outlier_threshold: Reject updates with large innovation (pixels)
+            measurement_noise: Override measurement noise (pixels)
 
         Returns:
-            innovation: Computed innovation vector
+            mean_error: Mean reprojection error
             is_valid: Whether update was applied
         """
         if not self.initialized:
@@ -204,106 +198,167 @@ class KalmanFilterPoseEstimator:
         # Predict reprojection
         proj_pred = self._project(pts3d, rvec, tvec)
 
-        # Innovation (measurement residual)
+        # Innovation
         innovation = (pts2d - proj_pred).flatten()
-
-        # Check for outliers
         innovation_norm = np.linalg.norm(innovation.reshape(-1, 2), axis=1)
-        max_innovation = np.max(innovation_norm)
-
-        if max_innovation > outlier_threshold:
-            # Large innovation - potential outlier, use robust update
-            print(f"  [WARN] Large innovation detected: max={max_innovation:.2f}px, using robust update")
+        mean_error = np.mean(innovation_norm)
 
         # Compute Jacobian
         J = self.compute_reprojection_jacobian(pts3d, rvec, tvec)
 
         # Measurement noise
         N = pts2d.shape[0]
-        R_noise = np.eye(2 * N, dtype=np.float64) * (self.r_measurement ** 2)
+        r = measurement_noise if measurement_noise is not None else self.r_measurement
+        R_noise = np.eye(2 * N, dtype=np.float64) * (r ** 2)
 
         # Kalman gain
-        S = J @ self.P @ J.T + R_noise
-        K = self.P @ J.T @ np.linalg.inv(S)
+        S = J @ self.P[:6, :6] @ J.T + R_noise
+        K = self.P[:6, :6] @ J.T @ np.linalg.inv(S)
 
-        # State update
-        self.state = self.state + K @ innovation
+        # State update (only pose part)
+        delta = K @ innovation
+        self.state[:3] += delta[:3]
+        self.state[3:6] += delta[3:6]
 
-        # Covariance update (Joseph form for numerical stability)
-        I_KJ = np.eye(self.state_dim) - K @ J
-        self.P = I_KJ @ self.P @ I_KJ.T + K @ R_noise @ K.T
+        # Covariance update (Joseph form)
+        I_KJ = np.eye(6) - K @ J
+        self.P[:6, :6] = I_KJ @ self.P[:6, :6] @ I_KJ.T + K @ R_noise @ K.T
 
-        # Update velocity from delta state (for next prediction)
-        self.state[6:9] = np.zeros(3)  # reset velocity after update
+        # Reset velocity after update (constant velocity model)
+        self.state[6:9] = np.zeros(3)
         self.state[9:12] = np.zeros(3)
 
-        # Record error
-        mean_error = np.mean(innovation_norm)
+        self.last_update_success = True
         self.error_history.append(mean_error)
 
-        return innovation, True
+        return mean_error, True
 
-    def update_with_pnp(self, pts2d, pts3d, robot_pose, eMc, measurement_noise=1.0):
+    def update_with_observation(self, pts2d, pts3d, rvec_pnp=None, tvec_pnp=None,
+                                inlier_mask=None, timestamp=None):
         """
-        Update using PnP to get observation, then apply Kalman update.
+        Update with PnP observation.
 
-        This uses IPPE to solve PnP, then uses the result as measurement.
+        This method:
+        1. Always predicts first (if initialized)
+        2. Attempts update with all points (or inliers)
+        3. Handles update failures gracefully
 
         Args:
             pts2d: Observed 2D points (Nx2)
             pts3d: Corresponding 3D points (Nx3)
-            robot_pose: Robot end-effector pose (4x4)
-            eMc: Eye-to-hand calibration (4x4)
-            measurement_noise: Measurement noise std dev
+            rvec_pnp: PnP rotation vector (optional, for display only)
+            tvec_pnp: PnP translation vector (optional, for display only)
+            inlier_mask: Boolean mask for inliers
+            timestamp: Timestamp for dt calculation
 
         Returns:
-            cMo: Computed camera pose (4x4)
-            rvec, tvec: Rotation and translation vectors
-            per_point_errors: Per-point reprojection errors
+            cMo, rvec_pnp, tvec_pnp, per_point_errors, is_updated
         """
         if pts2d.shape[0] < 4:
-            return None, None, None, False
+            return None, rvec_pnp, tvec_pnp, None, False
 
-        # Solve PnP
+        # Compute per-point errors with current state
+        if self.initialized:
+            rvec = self.state[:3]
+            tvec = self.state[3:6]
+            per_point_errors = self._compute_per_point_errors(pts3d, rvec, tvec, pts2d)
+        else:
+            per_point_errors = None
+
+        # Determine inliers if not provided
+        if inlier_mask is None and per_point_errors is not None:
+            median_error = np.median(per_point_errors)
+            threshold = max(median_error * 2.0, 2.0)
+            inlier_mask = per_point_errors < threshold
+
+        # Always predict first (if initialized)
+        if self.initialized and self.last_update_time is not None and timestamp is not None:
+            dt = (timestamp - self.last_update_time) / 1e9
+            dt = max(min(dt, 0.5), 0.001)  # clamp to reasonable range
+        elif self.initialized:
+            dt = 0.1  # default 100ms
+        else:
+            dt = 0.0
+
+        if self.initialized:
+            self.predict(dt)
+
+        # Solve PnP for observation
+        use_pts2d = pts2d
+        use_pts3d = pts3d
+        use_mask = inlier_mask
+
+        if inlier_mask is not None:
+            n_inliers = inlier_mask.sum()
+            if n_inliers >= 4:
+                use_pts2d = pts2d[inlier_mask]
+                use_pts3d = pts3d[inlier_mask]
+            else:
+                use_mask = None
+
         success, rvec, tvec = cv2.solvePnP(
-            pts3d, pts2d, self.K, self.dist, flags=cv2.SOLVEPNP_IPPE)
+            use_pts3d, use_pts2d, self.K, self.dist, flags=cv2.SOLVEPNP_IPPE)
+
         if not success:
-            return None, None, None, False
+            # PnP failed - increase process noise to account for prediction uncertainty
+            if self.initialized:
+                self._increase_process_noise(2.0)
+                self.last_update_success = False
+            return None, rvec_pnp, tvec_pnp, per_point_errors, False
 
         rvec = rvec.flatten()
         tvec = tvec.flatten()
 
-        # Compute per-point errors
+        # Compute per-point errors with PnP result
         per_point_errors = self._compute_per_point_errors(pts3d, rvec, tvec, pts2d)
 
         # Initialize if needed
         if not self.initialized:
-            self.initialize(rvec, tvec)
-            return self.get_cMo(), rvec, tvec, per_point_errors, True
+            self.initialize(rvec, tvec, timestamp)
+            cMo = self.get_cMo()
+            self.pose_history.append(cMo.copy())
+            return cMo, rvec, tvec, per_point_errors, True
 
-        # Prediction step
-        # Assume dt from last update
-        if len(self.pose_history) > 0:
-            dt = 0.1  # default 100ms
+        # Compute innovation based on current state prediction
+        proj_pred = self._project(pts3d, self.state[:3], self.state[3:6])
+        innovation = (pts2d - proj_pred).flatten()
+        innovation_norm = np.linalg.norm(innovation.reshape(-1, 2), axis=1)
+        max_innov = np.max(innovation_norm)
+
+        # Adaptive measurement noise based on innovation
+        if max_innov > self.r_measurement * 3:
+            adapt_r = self.r_measurement * (max_innov / (self.r_measurement * 3)) ** 2
         else:
-            dt = 0.0
-        self.predict(dt)
+            adapt_r = self.r_measurement
 
-        # Update step
-        innovation, is_valid = self.update(pts2d, pts3d, outlier_threshold=10.0)
+        # Attempt update
+        mean_error, updated = self.update(pts2d, pts3d, measurement_noise=adapt_r)
 
-        # Get updated pose
+        if not updated:
+            # Update failed - increase process noise
+            self._increase_process_noise(1.5)
+            self.last_update_success = False
+            cMo = self.get_cMo()
+            return cMo, rvec, tvec, per_point_errors, False
+
+        # Check if innovation is too large (state diverged from observation)
+        if max_innov > 20.0:
+            print(f"  [WARN] Large innovation: {max_innov:.2f}px, resetting velocity")
+            self.state[6:9] = np.zeros(3)
+            self.state[9:12] = np.zeros(3)
+
+        self.last_update_time = timestamp
+        self.last_update_success = True
+
         cMo = self.get_cMo()
-
-        # Update velocity history
-        if len(self.pose_history) > 0:
-            prev_cMo = self.pose_history[-1]
-            delta = self._pose_to_params(cMo) - self._pose_to_params(prev_cMo)
-            self.velocity_history.append(delta / max(dt, 0.001))
-
         self.pose_history.append(cMo.copy())
 
-        return cMo, rvec, tvec, per_point_errors, is_valid
+        return cMo, rvec, tvec, per_point_errors, True
+
+    def _increase_process_noise(self, factor):
+        """Increase process noise when update fails (covariance inflation)."""
+        self.P[:6, :6] *= factor ** 2
+        self.P[6:12, 6:12] *= (factor * 0.1) ** 2
 
     def get_cMo(self):
         """Get current camera pose as 4x4 matrix."""
@@ -373,119 +428,42 @@ class KalmanFilterPoseEstimator:
         """Get current covariance matrix."""
         return self.P.copy()
 
+    def is_initialized(self):
+        """Check if filter is initialized."""
+        return self.initialized
+
+    def was_last_update_successful(self):
+        """Check if last update was successful."""
+        return self.last_update_success
+
 
 class RobustKalmanFilterPoseEstimator(KalmanFilterPoseEstimator):
     """
     Robust Kalman filter with outlier rejection and adaptive noise.
+
+    Optimized for planar scenes where:
+    - Object is on Z=0 plane
+    - Camera observes roughly vertically (along -Z)
+    - Camera motion is roughly in XY plane
     """
 
-    def __init__(self, K, dist, process_noise_pos=0.001, process_noise_vel=0.01,
-                 measurement_noise=1.0, max_reproj_error=10.0):
-        super().__init__(K, dist, process_noise_pos, process_noise_vel, measurement_noise)
-        self.max_reproj_error = max_reproj_error
-
-    def update_with_robust(self, pts2d, pts3d, robot_pose, eMc, inlier_mask=None):
+    def __init__(self, K, dist,
+                 process_noise=(0.1, 0.1, 0.5, 0.01, 0.01, 0.05),
+                 process_noise_vel=(0.05, 0.05, 0.2, 0.005, 0.005, 0.02),
+                 measurement_noise=2.0,
+                 max_innovation=15.0):
         """
-        Update with robust handling of outliers.
-
         Args:
-            pts2d: Observed 2D points
-            pts3d: Corresponding 3D points
-            robot_pose: Robot pose (4x4)
-            eMc: Eye-to-hand calibration (4x4)
-            inlier_mask: Boolean mask for inliers (if None, computed automatically)
-
-        Returns:
-            cMo, per_point_errors, used_inlier_mask
+            process_noise: 6D [qx, qy, qz, qrx, qry, qrz]
+                          - qx, qy: small (well observable in planar scene)
+                          - qz: larger (depth not well observable)
+                          - qrx, qry: larger (tilt not well observable)
+                          - qrz: small (yaw about optical axis well observable)
+            measurement_noise: Base measurement noise in pixels
+            max_innovation: Maximum allowed innovation before adaptation
         """
-        if pts2d.shape[0] < 4:
-            return None, None, None, False
-
-        # First compute per-point errors with current state
-        if self.initialized:
-            rvec = self.state[:3]
-            tvec = self.state[3:6]
-            per_point_errors = self._compute_per_point_errors(pts3d, rvec, tvec, pts2d)
-        else:
-            per_point_errors = np.full(pts2d.shape[0], self.max_reproj_error)
-
-        # Determine inliers
-        if inlier_mask is None:
-            # Use adaptive threshold based on median error
-            median_error = np.median(per_point_errors)
-            threshold = max(median_error * 2.0, 3.0)
-            inlier_mask = per_point_errors < threshold
-
-        n_inliers = inlier_mask.sum()
-        if n_inliers < 4:
-            # Not enough inliers, use all points
-            inlier_mask = np.ones(pts2d.shape[0], dtype=bool)
-            n_inliers = pts2d.shape[0]
-
-        # Filter points
-        pts2d_filt = pts2d[inlier_mask]
-        pts3d_filt = pts3d[inlier_mask]
-
-        # Solve PnP with inliers
-        success, rvec, tvec = cv2.solvePnP(
-            pts3d_filt, pts2d_filt, self.K, self.dist, flags=cv2.SOLVEPNP_IPPE)
-        if not success:
-            return None, None, None, False
-
-        rvec = rvec.flatten()
-        tvec = tvec.flatten()
-
-        # Compute per-point errors with inlier-only PnP
-        per_point_errors_all = self._compute_per_point_errors(pts3d, rvec, tvec, pts2d)
-
-        # Initialize if needed
-        if not self.initialized:
-            self.initialize(rvec, tvec)
-            cMo = self.get_cMo()
-            self.pose_history.append(cMo.copy())
-            return cMo, per_point_errors_all, inlier_mask, True
-
-        # Predict
-        if len(self.pose_history) > 0:
-            dt = 0.1
-        else:
-            dt = 0.0
-        self.predict(dt)
-
-        # Compute innovation with inliers
-        proj_pred = self._project(pts3d_filt, self.state[:3], self.state[3:6])
-        innovation = (pts2d_filt - proj_pred).flatten()
-        innovation_norm = np.linalg.norm(innovation.reshape(-1, 2), axis=1)
-
-        # Check if innovation is too large (outlier)
-        max_innov = np.max(innovation_norm)
-        if max_innov > self.max_reproj_error:
-            # Reduce Kalman gain for robustness
-            adapt_noise = self.r_measurement * (max_innov / self.max_reproj_error) ** 2
-        else:
-            adapt_noise = self.r_measurement
-
-        # Update with adapted noise
-        J = self.compute_reprojection_jacobian(pts3d_filt, self.state[:3], self.state[3:6])
-        N = pts2d_filt.shape[0]
-        R_noise = np.eye(2 * N, dtype=np.float64) * (adapt_noise ** 2)
-
-        S = J @ self.P @ J.T + R_noise
-        K = self.P @ J.T @ np.linalg.inv(S)
-
-        self.state = self.state + K @ innovation
-        I_KJ = np.eye(self.state_dim) - K @ J
-        self.P = I_KJ @ self.P @ I_KJ.T + K @ R_noise @ K.T
-
-        # Update velocity
-        self.state[6:9] = np.zeros(3)
-        self.state[9:12] = np.zeros(3)
-
-        cMo = self.get_cMo()
-        self.pose_history.append(cMo.copy())
-        self.error_history.append(np.mean(innovation_norm))
-
-        return cMo, per_point_errors_all, inlier_mask, True
+        super().__init__(K, dist, process_noise, process_noise_vel, measurement_noise)
+        self.max_innovation = max_innovation
 
 
 def pose_to_euler_tvec(pose, unit='deg'):

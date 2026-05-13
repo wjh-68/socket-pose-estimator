@@ -1,0 +1,867 @@
+Loaded 5000 frames from dataset/save_data3/20260511_120244/metadata.json
+
+==============================================
+Processing frame 0: frame_001180.jpg
+
+0: 384x640 1 port, 446.9ms
+Speed: 8.4ms preprocess, 446.9ms inference, 3.1ms postprocess per image at shape (1, 3, 384, 640)
+size: 141 192
+size: 141 192
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     83.984,     -1.3396,     -93.168]), array([     1025.4,     -299.52,      538.98]))
+Kalman cMo: (array([     176.77,     0.75269,       1.006]), array([    -59.767,     -35.742,      727.47]))
+Kalman mean error: 0.4459px
+Static bMo: (array([     83.053,     -1.3108,     -92.332]), array([     1024.3,     -299.54,      538.98]))
+Static mean error: 0.4256px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.579px [INLIER]
+  Point 1 (R-top):   0.180px [INLIER]
+  Point 2 (L-mid):   0.772px [INLIER]
+  Point 3 (center):   0.419px [INLIER]
+  Point 4 (R-mid):   0.275px [INLIER]
+  Point 5 (L-bot):   0.449px [INLIER]
+  Point 6 (R-bot):   0.448px [INLIER]
+
+==============================================
+Processing frame 1: frame_001194.jpg
+
+0: 384x640 1 port, 449.0ms
+Speed: 6.6ms preprocess, 449.0ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 142 191
+size: 142 191
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     83.683,     -1.2301,     -91.408]), array([     1025.5,     -299.54,      538.97]))
+Kalman cMo: (array([      176.5,     -1.0072,      1.0296]), array([    -59.711,      -35.73,      727.47]))
+Kalman mean error: 0.4695px
+  Delta from last: t=33.04mm, r=1.78deg
+Static bMo: (array([     82.807,      -1.287,      -91.27]), array([     1024.6,     -299.56,      538.98]))
+Static mean error: 0.4827px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.256px [INLIER]
+  Point 1 (R-top):   0.225px [INLIER]
+  Point 2 (L-mid):   0.414px [INLIER]
+  Point 3 (center):   0.353px [INLIER]
+  Point 4 (R-mid):   1.693px [OUTLIER]
+  Point 5 (L-bot):   0.221px [INLIER]
+  Point 6 (R-bot):   0.032px [INLIER]
+
+==============================================
+Processing frame 2: frame_001204.jpg
+
+0: 384x640 1 port, 401.8ms
+Speed: 5.1ms preprocess, 401.8ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 142 200
+size: 142 200
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     83.705,     -1.1613,     -89.615]), array([     1025.6,     -299.41,      539.02]))
+Kalman cMo: (array([     176.56,     -2.7925,      1.0105]), array([    -59.671,     -35.777,      727.47]))
+Kalman mean error: 0.2843px
+  Delta from last: t=32.61mm, r=1.80deg
+Static bMo: (array([     81.448,     -1.1917,     -90.098]), array([     1022.6,     -299.61,      539.02]))
+Static mean error: 0.4946px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.336px [INLIER]
+  Point 1 (R-top):   0.546px [INLIER]
+  Point 2 (L-mid):   0.073px [INLIER]
+  Point 3 (center):   0.285px [INLIER]
+  Point 4 (R-mid):   0.532px [INLIER]
+  Point 5 (L-bot):   0.070px [INLIER]
+  Point 6 (R-bot):   0.148px [INLIER]
+
+==============================================
+Processing frame 3: frame_001219.jpg
+
+0: 384x640 1 port, 402.5ms
+Speed: 6.5ms preprocess, 402.5ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 142 195
+size: 142 195
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([      83.82,      -1.224,     -90.277]), array([     1025.9,     -299.49,      539.21]))
+Kalman cMo: (array([     176.66,     -2.1374,     0.98495]), array([    -59.672,     -35.867,      727.46]))
+Kalman mean error: 0.4064px
+  Delta from last: t=12.35mm, r=0.67deg
+Static bMo: (array([     81.556,     -1.1497,      -89.98]), array([     1023.3,     -299.58,      539.07]))
+Static mean error: 0.6033px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.159px [INLIER]
+  Point 1 (R-top):   0.236px [INLIER]
+  Point 2 (L-mid):   0.215px [INLIER]
+  Point 3 (center):   0.045px [INLIER]
+  Point 4 (R-mid):   1.655px [OUTLIER]
+  Point 5 (L-bot):   0.306px [INLIER]
+  Point 6 (R-bot):   0.264px [INLIER]
+
+==============================================
+Processing frame 4: frame_001230.jpg
+
+0: 384x640 1 port, 397.6ms
+Speed: 4.9ms preprocess, 397.6ms inference, 1.9ms postprocess per image at shape (1, 3, 384, 640)
+size: 142 191
+size: 142 191
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     83.348,     -1.0871,     -89.435]), array([     1026.4,     -299.53,      539.19]))
+Kalman cMo: (array([      176.2,     -2.9869,      1.0786]), array([    -59.616,     -35.739,      727.47]))
+Kalman mean error: 0.5031px
+  Delta from last: t=18.45mm, r=0.97deg
+Static bMo: (array([     82.089,     -1.1728,      -90.22]), array([     1023.9,     -299.57,      539.07]))
+Static mean error: 0.6135px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.191px [INLIER]
+  Point 1 (R-top):   0.091px [INLIER]
+  Point 2 (L-mid):   0.314px [INLIER]
+  Point 3 (center):   0.377px [INLIER]
+  Point 4 (R-mid):   1.986px [OUTLIER]
+  Point 5 (L-bot):   0.215px [INLIER]
+  Point 6 (R-bot):   0.166px [INLIER]
+
+==============================================
+Processing frame 5: frame_001243.jpg
+
+0: 384x640 1 port, 351.8ms
+Speed: 5.9ms preprocess, 351.8ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 143 191
+size: 143 191
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     83.543,     -1.1267,      -89.19]), array([       1027,      -299.4,      539.14]))
+Kalman cMo: (array([     176.41,     -3.2309,      1.0214]), array([    -59.719,     -35.617,      727.47]))
+Kalman mean error: 0.2026px
+  Delta from last: t=6.12mm, r=0.32deg
+Static bMo: (array([     82.285,     -1.1545,     -90.023]), array([     1024.4,     -299.53,      539.07]))
+Static mean error: 0.5880px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.177px [INLIER]
+  Point 1 (R-top):   0.172px [INLIER]
+  Point 2 (L-mid):   0.299px [INLIER]
+  Point 3 (center):   0.193px [INLIER]
+  Point 4 (R-mid):   0.237px [INLIER]
+  Point 5 (L-bot):   0.226px [INLIER]
+  Point 6 (R-bot):   0.114px [INLIER]
+
+==============================================
+Processing frame 6: frame_001254.jpg
+
+0: 384x640 1 port, 354.5ms
+Speed: 4.7ms preprocess, 354.5ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 144 188
+size: 144 188
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     84.016,     -1.2191,     -89.412]), array([     1027.9,     -299.27,      539.35]))
+Kalman cMo: (array([     176.88,     -3.0045,     0.94159]), array([     -59.74,     -35.626,      727.46]))
+Kalman mean error: 0.1804px
+  Delta from last: t=11.27mm, r=0.53deg
+Static bMo: (array([       82.5,     -1.1676,     -89.915]), array([     1024.9,     -299.49,      539.09]))
+Static mean error: 0.6656px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.220px [INLIER]
+  Point 1 (R-top):   0.125px [INLIER]
+  Point 2 (L-mid):   0.165px [INLIER]
+  Point 3 (center):   0.314px [INLIER]
+  Point 4 (R-mid):   0.213px [INLIER]
+  Point 5 (L-bot):   0.054px [INLIER]
+  Point 6 (R-bot):   0.171px [INLIER]
+
+==============================================
+Processing frame 7: frame_001267.jpg
+
+0: 384x640 1 port, 358.0ms
+Speed: 5.8ms preprocess, 358.0ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 146 189
+size: 146 189
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     84.501,     -1.1538,     -90.145]), array([     1028.8,     -299.27,      539.33]))
+Kalman cMo: (array([     177.35,     -2.2752,      1.0439]), array([    -59.626,     -35.396,      727.48]))
+Kalman mean error: 0.2404px
+  Delta from last: t=18.46mm, r=0.87deg
+Static bMo: (array([     82.571,     -1.2154,     -90.378]), array([       1025,     -299.49,      539.12]))
+Static mean error: 0.6361px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.107px [INLIER]
+  Point 1 (R-top):   0.201px [INLIER]
+  Point 2 (L-mid):   0.395px [INLIER]
+  Point 3 (center):   0.340px [INLIER]
+  Point 4 (R-mid):   0.207px [INLIER]
+  Point 5 (L-bot):   0.297px [INLIER]
+  Point 6 (R-bot):   0.136px [INLIER]
+
+==============================================
+Processing frame 8: frame_001282.jpg
+
+0: 384x640 1 port, 382.7ms
+Speed: 5.3ms preprocess, 382.7ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 150 186
+size: 150 186
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     85.673,     -1.4281,      -89.93]), array([     1029.9,     -299.31,      539.44]))
+Kalman cMo: (array([     178.53,     -2.4793,     0.75891]), array([    -59.513,     -35.263,       727.5]))
+Kalman mean error: 0.5735px
+  Delta from last: t=25.83mm, r=1.23deg
+Static bMo: (array([     83.103,     -1.2696,     -90.535]), array([     1025.7,     -299.45,      539.16]))
+Static mean error: 0.6922px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.237px [INLIER]
+  Point 1 (R-top):   0.495px [INLIER]
+  Point 2 (L-mid):   0.468px [INLIER]
+  Point 3 (center):   0.478px [INLIER]
+  Point 4 (R-mid):   1.844px [OUTLIER]
+  Point 5 (L-bot):   0.328px [INLIER]
+  Point 6 (R-bot):   0.221px [INLIER]
+
+==============================================
+Processing frame 9: frame_001296.jpg
+
+0: 384x640 1 port, 347.2ms
+Speed: 4.8ms preprocess, 347.2ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 156 190
+size: 156 190
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     86.246,     -1.2964,     -87.408]), array([     1030.9,     -299.19,      539.43]))
+Kalman cMo: (array([     179.17,     -4.9991,     0.76277]), array([    -59.437,     -35.052,      727.52]))
+Kalman mean error: 0.6571px
+  Delta from last: t=45.64mm, r=2.60deg
+Static bMo: (array([     83.812,     -1.2438,      -90.22]), array([     1026.2,      -299.4,      539.22]))
+Static mean error: 0.6684px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.039px [INLIER]
+  Point 1 (R-top):   0.082px [INLIER]
+  Point 2 (L-mid):   0.260px [OUTLIER]
+  Point 3 (center):   0.271px [INLIER]
+  Point 4 (R-mid):   0.190px [INLIER]
+  Point 5 (L-bot):   2.798px [OUTLIER]
+  Point 6 (R-bot):   0.222px [INLIER]
+
+==============================================
+Processing frame 10: frame_001310.jpg
+
+0: 384x640 1 port, 341.2ms
+Speed: 5.4ms preprocess, 341.2ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 148 199
+size: 148 199
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     88.863,     -1.3614,     -86.921]), array([     1031.8,     -299.22,      539.41]))
+Kalman cMo: (array([     -178.2,     -5.4853,     0.67269]), array([     -59.34,     -34.819,      727.54]))
+Kalman mean error: 0.5290px
+  Delta from last: t=52.85mm, r=2.67deg
+Static bMo: (array([     84.716,     -1.2579,     -90.587]), array([     1026.6,      -299.4,      539.25]))
+Static mean error: 0.6456px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.086px [INLIER]
+  Point 1 (R-top):   0.153px [INLIER]
+  Point 2 (L-mid):   0.232px [INLIER]
+  Point 3 (center):   0.424px [INLIER]
+  Point 4 (R-mid):   0.162px [INLIER]
+  Point 5 (L-bot):   1.934px [OUTLIER]
+  Point 6 (R-bot):   0.027px [INLIER]
+
+==============================================
+Processing frame 11: frame_001324.jpg
+
+0: 384x640 (no detections), 346.4ms
+Speed: 5.2ms preprocess, 346.4ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 11: frame_001338.jpg
+
+0: 384x640 (no detections), 349.9ms
+Speed: 4.8ms preprocess, 349.9ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 11: frame_001349.jpg
+
+0: 384x640 (no detections), 338.3ms
+Speed: 4.7ms preprocess, 338.3ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 11: frame_001359.jpg
+
+0: 384x640 1 port, 351.0ms
+Speed: 4.8ms preprocess, 351.0ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 149 189
+size: 149 189
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     87.767,     -1.0884,     -89.706]), array([     1035.3,     -298.82,      539.62]))
+Kalman cMo: (array([    -179.38,     -2.7176,       1.087]), array([    -59.275,     -34.281,      727.54]))
+Kalman mean error: 0.4596px
+  Delta from last: t=57.96mm, r=3.03deg
+Static bMo: (array([     84.798,     -1.2179,     -89.647]), array([     1027.2,     -299.35,      539.26]))
+Static mean error: 0.6803px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.273px [INLIER]
+  Point 1 (R-top):   0.272px [INLIER]
+  Point 2 (L-mid):   0.750px [INLIER]
+  Point 3 (center):   0.612px [INLIER]
+  Point 4 (R-mid):   0.760px [INLIER]
+  Point 5 (L-bot):   0.275px [INLIER]
+  Point 6 (R-bot):   0.274px [INLIER]
+
+==============================================
+Processing frame 12: frame_001373.jpg
+
+0: 384x640 1 port, 342.1ms
+Speed: 5.3ms preprocess, 342.1ms inference, 2.0ms postprocess per image at shape (1, 3, 384, 640)
+size: 153 181
+size: 153 181
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     89.368,    -0.98374,     -88.705]), array([     1036.2,     -298.81,      539.45]))
+Kalman cMo: (array([    -177.77,     -3.7236,      1.1412]), array([     -59.18,     -33.904,      727.54]))
+Kalman mean error: 0.4053px
+  Delta from last: t=34.98mm, r=1.91deg
+Static bMo: (array([     84.721,     -1.1709,     -89.474]), array([     1027.5,     -299.31,      539.28]))
+Static mean error: 0.6398px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.323px [INLIER]
+  Point 1 (R-top):   0.251px [INLIER]
+  Point 2 (L-mid):   0.683px [INLIER]
+  Point 3 (center):   0.465px [INLIER]
+  Point 4 (R-mid):   0.444px [INLIER]
+  Point 5 (L-bot):   0.370px [INLIER]
+  Point 6 (R-bot):   0.301px [INLIER]
+
+==============================================
+Processing frame 13: frame_001384.jpg
+
+0: 384x640 1 port, 449.7ms
+Speed: 5.3ms preprocess, 449.7ms inference, 5.2ms postprocess per image at shape (1, 3, 384, 640)
+size: 160 184
+size: 160 184
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([      88.64,     -1.0513,      -88.22]), array([       1037,      -298.8,      539.44]))
+Kalman cMo: (array([    -178.48,     -4.2018,      1.0489]), array([    -59.039,     -33.714,      727.52]))
+Kalman mean error: 0.4674px
+  Delta from last: t=17.93mm, r=0.87deg
+Static bMo: (array([     84.866,     -1.1827,     -89.904]), array([     1027.8,     -299.29,      539.31]))
+Static mean error: 0.6081px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.145px [INLIER]
+  Point 1 (R-top):   0.306px [INLIER]
+  Point 2 (L-mid):   1.495px [OUTLIER]
+  Point 3 (center):   0.304px [INLIER]
+  Point 4 (R-mid):   0.430px [INLIER]
+  Point 5 (L-bot):   0.098px [INLIER]
+  Point 6 (R-bot):   0.213px [INLIER]
+
+==============================================
+Processing frame 14: frame_001394.jpg
+
+0: 384x640 1 port, 655.9ms
+Speed: 4.7ms preprocess, 655.9ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 159 188
+size: 159 188
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     89.903,    -0.97816,     -88.433]), array([     1037.6,     -298.75,      539.41]))
+Kalman cMo: (array([    -177.23,     -3.9941,      1.1329]), array([    -59.016,     -33.531,       727.5]))
+Kalman mean error: 0.3335px
+  Delta from last: t=26.45mm, r=1.28deg
+Static bMo: (array([      87.64,     -1.1174,     -90.518]), array([     1029.6,     -299.21,       539.3]))
+Static mean error: 0.6557px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.136px [INLIER]
+  Point 1 (R-top):   0.223px [INLIER]
+  Point 2 (L-mid):   0.573px [INLIER]
+  Point 3 (center):   0.484px [INLIER]
+  Point 4 (R-mid):   0.346px [INLIER]
+  Point 5 (L-bot):   0.346px [INLIER]
+  Point 6 (R-bot):   0.227px [INLIER]
+
+==============================================
+Processing frame 15: frame_001409.jpg
+
+0: 384x640 1 port, 503.8ms
+Speed: 5.0ms preprocess, 503.8ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 161 188
+size: 161 188
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     87.116,     -1.1873,     -88.164]), array([     1038.7,     -298.49,      539.45]))
+Kalman cMo: (array([    -179.99,     -4.2519,     0.91002]), array([    -59.107,      -33.33,      727.46]))
+Kalman mean error: 0.5185px
+  Delta from last: t=55.83mm, r=2.80deg
+Static bMo: (array([     87.841,     -1.1144,      -90.36]), array([     1030.1,     -299.13,      539.33]))
+Static mean error: 0.7643px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.214px [INLIER]
+  Point 1 (R-top):   0.179px [INLIER]
+  Point 2 (L-mid):   1.997px [OUTLIER]
+  Point 3 (center):   0.354px [INLIER]
+  Point 4 (R-mid):   0.250px [INLIER]
+  Point 5 (L-bot):   0.029px [INLIER]
+  Point 6 (R-bot):   0.109px [INLIER]
+
+==============================================
+Processing frame 16: frame_001422.jpg
+
+0: 384x640 1 port, 445.1ms
+Speed: 5.5ms preprocess, 445.1ms inference, 2.3ms postprocess per image at shape (1, 3, 384, 640)
+size: 164 186
+size: 164 186
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     93.995,     -1.0115,     -89.995]), array([     1039.5,     -298.44,       539.5]))
+Kalman cMo: (array([    -173.17,     -2.4334,      1.1772]), array([    -59.037,     -33.179,      727.42]))
+Kalman mean error: 0.4209px
+  Delta from last: t=147.63mm, r=7.09deg
+Static bMo: (array([      84.62,     -1.0541,     -89.611]), array([       1029,     -299.11,      539.35]))
+Static mean error: 0.7731px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.371px [INLIER]
+  Point 1 (R-top):   0.143px [INLIER]
+  Point 2 (L-mid):   0.726px [INLIER]
+  Point 3 (center):   0.586px [INLIER]
+  Point 4 (R-mid):   0.652px [INLIER]
+  Point 5 (L-bot):   0.191px [INLIER]
+  Point 6 (R-bot):   0.277px [INLIER]
+
+==============================================
+Processing frame 17: frame_001436.jpg
+
+0: 384x640 (no detections), 360.5ms
+Speed: 5.0ms preprocess, 360.5ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001447.jpg
+
+0: 384x640 (no detections), 391.0ms
+Speed: 4.9ms preprocess, 391.0ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001461.jpg
+
+0: 384x640 (no detections), 375.0ms
+Speed: 5.0ms preprocess, 375.0ms inference, 1.2ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001475.jpg
+
+0: 384x640 (no detections), 384.1ms
+Speed: 6.0ms preprocess, 384.1ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001486.jpg
+
+0: 384x640 (no detections), 461.2ms
+Speed: 5.7ms preprocess, 461.2ms inference, 1.2ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001500.jpg
+
+0: 384x640 (no detections), 430.8ms
+Speed: 4.6ms preprocess, 430.8ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001510.jpg
+
+0: 384x640 (no detections), 429.3ms
+Speed: 4.9ms preprocess, 429.3ms inference, 1.2ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001524.jpg
+
+0: 384x640 (no detections), 397.7ms
+Speed: 4.9ms preprocess, 397.7ms inference, 1.3ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001539.jpg
+
+0: 384x640 (no detections), 362.2ms
+Speed: 4.7ms preprocess, 362.2ms inference, 1.2ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001553.jpg
+
+0: 384x640 (no detections), 405.6ms
+Speed: 5.1ms preprocess, 405.6ms inference, 1.3ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001567.jpg
+
+0: 384x640 (no detections), 336.6ms
+Speed: 4.8ms preprocess, 336.6ms inference, 1.3ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001581.jpg
+
+0: 384x640 (no detections), 354.4ms
+Speed: 4.8ms preprocess, 354.4ms inference, 1.2ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001592.jpg
+
+0: 384x640 (no detections), 383.0ms
+Speed: 4.7ms preprocess, 383.0ms inference, 1.3ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 17: frame_001603.jpg
+
+0: 384x640 1 port, 368.5ms
+Speed: 4.9ms preprocess, 368.5ms inference, 2.0ms postprocess per image at shape (1, 3, 384, 640)
+size: 154 201
+size: 154 201
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     78.443,      -1.469,     -87.877]), array([     1052.2,     -296.64,      541.54]))
+Kalman cMo: (array([     171.35,     -4.5247,     0.60934]), array([    -58.672,     -32.364,      727.45]))
+Kalman mean error: 0.1495px
+  Delta from last: t=317.32mm, r=15.66deg
+Static bMo: (array([     87.738,     -1.0967,     -90.261]), array([     1030.5,        -299,      539.37]))
+Static mean error: 0.8922px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.121px [INLIER]
+  Point 1 (R-top):   0.025px [INLIER]
+  Point 2 (L-mid):   0.073px [INLIER]
+  Point 3 (center):   0.461px [INLIER]
+  Point 4 (R-mid):   0.181px [INLIER]
+  Point 5 (L-bot):   0.095px [INLIER]
+  Point 6 (R-bot):   0.090px [INLIER]
+
+==============================================
+Processing frame 18: frame_001616.jpg
+
+0: 384x640 1 port, 405.4ms
+Speed: 7.6ms preprocess, 405.4ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 155 199
+size: 155 199
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     92.331,     -1.2075,     -87.521]), array([     1053.1,     -296.97,      540.64]))
+Kalman cMo: (array([    -174.77,     -4.8909,     0.85378]), array([    -58.196,     -31.233,       727.5]))
+Kalman mean error: 0.3919px
+  Delta from last: t=281.58mm, r=13.90deg
+Static bMo: (array([     89.361,     -1.0674,     -89.856]), array([     1031.4,     -298.91,      539.38]))
+Static mean error: 0.9399px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.051px [INLIER]
+  Point 1 (R-top):   0.128px [INLIER]
+  Point 2 (L-mid):   0.121px [INLIER]
+  Point 3 (center):   0.235px [INLIER]
+  Point 4 (R-mid):   1.693px [OUTLIER]
+  Point 5 (L-bot):   0.169px [INLIER]
+  Point 6 (R-bot):   0.122px [INLIER]
+
+==============================================
+Processing frame 19: frame_001631.jpg
+
+0: 384x640 (no detections), 368.9ms
+Speed: 5.6ms preprocess, 368.9ms inference, 1.3ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 19: frame_001641.jpg
+
+0: 384x640 (no detections), 351.5ms
+Speed: 6.2ms preprocess, 351.5ms inference, 1.2ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 19: frame_001656.jpg
+
+0: 384x640 1 port, 352.1ms
+Speed: 6.2ms preprocess, 352.1ms inference, 1.9ms postprocess per image at shape (1, 3, 384, 640)
+size: 160 192
+size: 160 192
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     77.387,     -1.3739,      -90.48]), array([     1056.1,     -297.15,         540]))
+Kalman cMo: (array([     170.21,     -1.9299,     0.83571]), array([    -57.725,       -29.9,      727.44]))
+Kalman mean error: 0.3745px
+  Delta from last: t=302.11mm, r=15.30deg
+Static bMo: (array([     91.266,    -0.99993,     -91.928]), array([       1031,     -298.83,      539.37]))
+Static mean error: 1.0593px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.035px [INLIER]
+  Point 1 (R-top):   0.457px [INLIER]
+  Point 2 (L-mid):   0.402px [INLIER]
+  Point 3 (center):   0.457px [INLIER]
+  Point 4 (R-mid):   0.783px [INLIER]
+  Point 5 (L-bot):   0.059px [INLIER]
+  Point 6 (R-bot):   0.427px [INLIER]
+
+==============================================
+Processing frame 20: frame_001669.jpg
+
+0: 384x640 1 port, 357.7ms
+Speed: 4.7ms preprocess, 357.7ms inference, 5.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 168 187
+size: 168 187
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     91.626,     -1.1059,     -86.949]), array([     1056.9,     -297.21,      539.58]))
+Kalman cMo: (array([    -175.48,     -5.4698,     0.92683]), array([    -57.584,     -29.238,      727.32]))
+Kalman mean error: 0.2561px
+  Delta from last: t=290.63mm, r=14.74deg
+Static bMo: (array([     92.764,     -1.1481,     -88.984]), array([     1030.1,      -298.7,      539.41]))
+Static mean error: 1.0752px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.089px [INLIER]
+  Point 1 (R-top):   0.332px [INLIER]
+  Point 2 (L-mid):   0.256px [INLIER]
+  Point 3 (center):   0.357px [INLIER]
+  Point 4 (R-mid):   0.524px [INLIER]
+  Point 5 (L-bot):   0.033px [INLIER]
+  Point 6 (R-bot):   0.200px [INLIER]
+
+==============================================
+Processing frame 21: frame_001680.jpg
+
+0: 384x640 1 port, 341.1ms
+Speed: 4.9ms preprocess, 341.1ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 160 197
+size: 160 197
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     81.163,     -1.1904,     -89.679]), array([     1057.6,     -297.17,      539.38]))
+Kalman cMo: (array([        174,     -2.7375,     0.97975]), array([     -57.47,     -28.852,      727.12]))
+Kalman mean error: 0.1834px
+  Delta from last: t=213.52mm, r=10.87deg
+Static bMo: (array([     94.064,      -1.079,      -86.83]), array([     1028.9,     -298.69,      539.42]))
+Static mean error: 1.0060px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.097px [INLIER]
+  Point 1 (R-top):   0.164px [INLIER]
+  Point 2 (L-mid):   0.182px [INLIER]
+  Point 3 (center):   0.486px [INLIER]
+  Point 4 (R-mid):   0.202px [INLIER]
+  Point 5 (L-bot):   0.028px [INLIER]
+  Point 6 (R-bot):   0.125px [INLIER]
+
+==============================================
+Processing frame 22: frame_001694.jpg
+
+0: 384x640 1 port, 370.5ms
+Speed: 4.8ms preprocess, 370.5ms inference, 2.0ms postprocess per image at shape (1, 3, 384, 640)
+size: 152 184
+size: 152 184
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     96.214,     -1.1807,     -87.895]), array([     1058.5,     -297.22,      539.39]))
+Kalman cMo: (array([     -170.9,     -4.5235,     0.89952]), array([    -57.346,     -28.636,      726.97]))
+Kalman mean error: 0.1760px
+  Delta from last: t=307.09mm, r=15.19deg
+Static bMo: (array([     95.844,    -0.89159,     -93.438]), array([     1027.1,     -298.57,      539.45]))
+Static mean error: 0.9506px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.099px [INLIER]
+  Point 1 (R-top):   0.321px [INLIER]
+  Point 2 (L-mid):   0.016px [INLIER]
+  Point 3 (center):   0.359px [INLIER]
+  Point 4 (R-mid):   0.209px [INLIER]
+  Point 5 (L-bot):   0.098px [INLIER]
+  Point 6 (R-bot):   0.131px [INLIER]
+
+==============================================
+Processing frame 23: frame_001705.jpg
+
+0: 384x640 1 port, 342.7ms
+Speed: 4.8ms preprocess, 342.7ms inference, 1.9ms postprocess per image at shape (1, 3, 384, 640)
+size: 145 181
+size: 145 181
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     80.831,     -1.0038,     -87.966]), array([     1059.2,     -297.22,      539.37]))
+Kalman cMo: (array([      173.7,      -4.459,      1.0799]), array([    -57.193,     -28.421,      726.76]))
+Kalman mean error: 0.2813px
+  Delta from last: t=315.06mm, r=15.39deg
+Static bMo: (array([      91.77,    -0.98452,     -85.369]), array([     1030.3,     -298.43,       539.5]))
+Static mean error: 0.8199px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.120px [INLIER]
+  Point 1 (R-top):   0.392px [INLIER]
+  Point 2 (L-mid):   0.197px [INLIER]
+  Point 3 (center):   0.367px [INLIER]
+  Point 4 (R-mid):   0.573px [INLIER]
+  Point 5 (L-bot):   0.025px [INLIER]
+  Point 6 (R-bot):   0.294px [INLIER]
+
+==============================================
+Processing frame 24: frame_001718.jpg
+
+0: 384x640 1 port, 339.9ms
+Speed: 4.6ms preprocess, 339.9ms inference, 1.7ms postprocess per image at shape (1, 3, 384, 640)
+size: 147 186
+size: 147 186
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     95.889,     -1.0896,      -89.98]), array([     1060.1,     -297.17,      539.37]))
+Kalman cMo: (array([    -171.28,     -2.4439,      1.0941]), array([    -57.117,     -28.207,      726.63]))
+Kalman mean error: 0.6864px
+  Delta from last: t=317.02mm, r=15.15deg
+Static bMo: (array([      91.77,    -0.98452,     -85.369]), array([     1030.3,     -298.43,       539.5]))
+Static mean error: 0.7714px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.514px [OUTLIER]
+  Point 1 (R-top):   0.247px [INLIER]
+  Point 2 (L-mid):   3.075px [OUTLIER]
+  Point 3 (center):   0.256px [INLIER]
+  Point 4 (R-mid):   0.245px [INLIER]
+  Point 5 (L-bot):   0.876px [OUTLIER]
+  Point 6 (R-bot):   0.247px [INLIER]
+
+==============================================
+Processing frame 25: frame_001732.jpg
+
+0: 384x640 1 port, 367.2ms
+Speed: 4.9ms preprocess, 367.2ms inference, 1.8ms postprocess per image at shape (1, 3, 384, 640)
+size: 152 203
+size: 152 203
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     80.414,    -0.63414,     -85.116]), array([     1060.9,     -297.03,      539.26]))
+Kalman cMo: (array([      173.3,     -7.3254,      1.3067]), array([     -57.11,     -27.847,      726.41]))
+Kalman mean error: 0.2755px
+  Delta from last: t=341.62mm, r=16.15deg
+Static bMo: (array([     93.056,    -0.91126,     -87.045]), array([     1029.9,      -298.4,      539.51]))
+Static mean error: 0.7781px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.065px [INLIER]
+  Point 1 (R-top):   0.203px [INLIER]
+  Point 2 (L-mid):   0.355px [INLIER]
+  Point 3 (center):   0.483px [INLIER]
+  Point 4 (R-mid):   0.526px [INLIER]
+  Point 5 (L-bot):   0.066px [INLIER]
+  Point 6 (R-bot):   0.231px [INLIER]
+
+==============================================
+Processing frame 26: frame_001747.jpg
+
+0: 384x640 (no detections), 343.0ms
+Speed: 4.8ms preprocess, 343.0ms inference, 5.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001761.jpg
+
+0: 384x640 (no detections), 364.2ms
+Speed: 4.8ms preprocess, 364.2ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001775.jpg
+
+0: 384x640 (no detections), 489.8ms
+Speed: 5.0ms preprocess, 489.8ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001785.jpg
+
+0: 384x640 (no detections), 357.9ms
+Speed: 5.0ms preprocess, 357.9ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001800.jpg
+
+0: 384x640 (no detections), 389.7ms
+Speed: 5.4ms preprocess, 389.7ms inference, 5.0ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001810.jpg
+
+0: 384x640 (no detections), 399.8ms
+Speed: 4.9ms preprocess, 399.8ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001821.jpg
+
+0: 384x640 (no detections), 429.5ms
+Speed: 4.9ms preprocess, 429.5ms inference, 1.1ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001834.jpg
+
+0: 384x640 (no detections), 618.4ms
+Speed: 6.0ms preprocess, 618.4ms inference, 5.9ms postprocess per image at shape (1, 3, 384, 640)
+  No detection, skipping
+
+==============================================
+Processing frame 26: frame_001848.jpg
+
+0: 384x640 1 port, 368.1ms
+Speed: 6.1ms preprocess, 368.1ms inference, 2.4ms postprocess per image at shape (1, 3, 384, 640)
+size: 166 204
+size: 166 204
+ED::ED()
+srcImage.size()[0 x 0]
+Found 7 points
+Kalman bMo: (array([     96.438,     -1.0382,     -89.788]), array([     1069.8,     -296.07,      540.29]))
+Kalman cMo: (array([    -170.74,     -2.6387,      1.1359]), array([    -56.686,     -26.862,      726.27]))
+Kalman mean error: 0.1485px
+  Delta from last: t=356.50mm, r=16.63deg
+Static bMo: (array([     94.393,     -1.0401,     -86.804]), array([     1028.1,     -298.36,      539.58]))
+Static mean error: 0.7769px
+Per-point errors (px), threshold=0.800:
+  Point 0 (L-top):   0.074px [INLIER]
+  Point 1 (R-top):   0.215px [INLIER]
+  Point 2 (L-mid):   0.068px [INLIER]
+  Point 3 (center):   0.204px [INLIER]
+  Point 4 (R-mid):   0.260px [INLIER]
+  Point 5 (L-bot):   0.021px [INLIER]
+  Point 6 (R-bot):   0.197px [INLIER]
+
+==============================================
+Processing frame 27: frame_001862.jpg
+
+0: 384x640 1 port, 351.6ms
+Speed: 4.8ms preprocess, 351.6ms inference, 1.9ms postprocess per image at shape (1, 3, 384, 640)
+size: 176 201
+size: 176 201
+ED::ED()
+srcImage.size()[0 x 0]
