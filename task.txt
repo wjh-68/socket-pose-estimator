@@ -1,0 +1,364 @@
+请重构当前的 KalmanFilterPoseEstimator，使其成为一个“真正可用的视觉位姿 EKF / constant velocity tracker”，而不是当前这种退化的 low-pass filter。
+
+当前场景：
+
+* 相机观测一个平面目标（所有 3D 点共面）
+* 使用 solvePnP(IPPE) 得到初始 pose
+* 相机运动缓慢，但可能存在较大位移
+* 相机会逐渐接近目标，后期接近垂直观察
+* 不使用 IMU
+* 不使用机器人速度作为输入
+* measurement 使用 reprojection residual，而不是直接使用 PnP pose
+* 当前已有：
+
+  * reprojection Jacobian
+  * innovation update
+  * anisotropic process noise
+  * outlier rejection
+
+目标：
+
+将当前系统改造成：
+
+* 真正的 constant velocity EKF
+* 使用 velocity state 做有效预测
+* 使用 SO(3) 正确传播 rotation
+* 正确离散化 process noise
+* 支持 velocity damping
+* 支持 velocity estimation
+* 提高 planar scene 下的稳定性
+* 保持现有 reprojection-based measurement model
+
+========================
+必须修改的内容
+=======
+
+1. 不要在 update 后将 velocity 清零
+
+删除：
+
+self.state[6:9] = 0
+self.state[9:12] = 0
+
+当前这样会导致：
+
+* velocity state 永远无效
+* predict 基本不起作用
+* 整个 KF 退化成低通滤波器
+
+========================
+
+2. 正确估计 velocity state
+
+每次 measurement update 后：
+
+根据前后 pose 估计 velocity。
+
+translation velocity：
+
+v_t = (t_now - t_prev) / dt
+
+rotation velocity：
+
+不要直接对 rvec 做减法。
+
+必须：
+
+* 使用 Rotation matrix
+* 使用 Lie algebra
+
+即：
+
+R_delta = R_prev.T @ R_now
+
+omega =
+Rotation.from_matrix(R_delta).as_rotvec() / dt
+
+然后：
+
+对 velocity 做 low-pass filtering：
+
+v = alpha * v_old + (1-alpha) * v_measured
+
+推荐：
+
+alpha = 0.8 ~ 0.95
+
+目的：
+
+* 避免 planar PnP noise 导致 velocity 爆炸
+* 保持运动惯性
+
+========================
+
+3. 使用正确的 SO(3) rotation prediction
+
+当前代码：
+
+rvec_pred = rvec + vrvec * dt
+
+这是错误的。
+
+rotation 不应该在欧氏空间直接相加。
+
+必须改成：
+
+R_pred = R * Exp(omega * dt)
+
+即：
+
+R_current =
+Rotation.from_rotvec(rvec)
+
+R_delta =
+Rotation.from_rotvec(omega * dt)
+
+R_pred = R_current * R_delta
+
+然后：
+
+rvec_pred =
+R_pred.as_rotvec()
+
+translation 仍然：
+
+t_pred = t + v * dt
+
+========================
+
+4. 正确离散化 process noise Q
+
+当前代码：
+
+Q 不依赖 dt。
+
+这是错误的。
+
+必须：
+
+让 Q 随 dt 正确缩放。
+
+至少：
+
+* velocity random walk 部分乘 dt
+* position uncertainty 与 dt^2 有关
+
+推荐实现：
+
+constant velocity model：
+
+单轴：
+
+Q =
+sigma_a^2 *
+[
+[dt^4/4, dt^3/2]
+[dt^3/2, dt^2]
+]
+
+对：
+
+* tx ty tz
+* rx ry rz
+
+分别构建 block diagonal Q。
+
+========================
+
+5. 保留 anisotropic noise
+
+当前 planar scene 中：
+
+* z
+* rx
+* ry
+
+明显弱观测。
+
+因此：
+
+必须保留不同自由度不同 process noise。
+
+推荐：
+
+translation:
+qx qy 小
+qz 大
+
+rotation:
+qrz 小
+qrx qry 大
+
+velocity noise：
+vz noise > vx/vy
+vrx/vry noise > vrz
+
+========================
+
+6. measurement model 保持 reprojection residual
+
+不要改成：
+“PnP pose -> KF”
+
+当前方式是正确方向：
+
+innovation =
+observed_pixels - projected_pixels
+
+继续保留：
+
+* reprojection Jacobian
+* reprojection residual update
+
+========================
+
+7. 使用完整 covariance propagation
+
+当前：
+只更新 P[:6,:6]
+
+这是不正确的。
+
+必须：
+
+更新完整状态 covariance：
+
+P = (I-KH)P(I-KH)^T + KRK^T
+
+包括：
+
+* pose-velocity correlation
+* velocity covariance
+
+measurement Jacobian H 应扩展到完整 state dimension。
+
+velocity 部分 Jacobian 为 0。
+
+========================
+
+8. 增加 Mahalanobis innovation gating
+
+不要只使用：
+
+max pixel residual
+
+必须：
+
+使用：
+
+d² = yᵀ S⁻¹ y
+
+其中：
+
+S = HPHᵀ + R
+
+若：
+
+d² > threshold
+
+则：
+
+* reject update
+  或
+* inflate measurement noise
+
+========================
+
+9. 增加 velocity damping
+
+predict 前：
+
+v *= damping_factor
+omega *= damping_factor
+
+推荐：
+
+0.95 ~ 0.99
+
+目的：
+
+* 防止错误速度长期积累
+* 防止 planar degeneracy 导致 drift
+
+========================
+
+10. 增加 condition number diagnostics
+
+增加：
+
+JTJ =
+J.T @ R^-1 @ J
+
+输出：
+
+np.linalg.cond(JTJ)
+
+用于检测 planar degeneracy。
+
+========================
+
+11. 不要破坏现有接口
+
+尽量保持：
+
+update_with_observation(...)
+get_cMo()
+get_bMo()
+
+等接口兼容。
+
+========================
+
+12. 保持当前鲁棒机制
+
+继续保留：
+
+* inlier filtering
+* adaptive measurement noise
+* covariance inflation
+* update failure handling
+
+========================
+
+13. 代码要求
+
+* 保持 numpy/scipy 风格
+* 不引入大型依赖
+* 注释清晰
+* 明确区分：
+
+  * Euclidean update
+  * SO(3) update
+  * velocity estimation
+  * covariance propagation
+
+========================
+
+14. 额外要求
+
+增加调试输出：
+
+* estimated velocity
+* angular velocity
+* Mahalanobis distance
+* innovation norm
+* condition number
+* covariance diagonal
+
+方便分析滤波稳定性。
+
+========================
+
+15. 最终目标
+
+希望得到：
+
+一个适用于：
+
+* planar target
+* slow camera motion
+* large displacement
+* near-frontal observation
+* reprojection-based EKF
+
+的稳定视觉位姿跟踪器。

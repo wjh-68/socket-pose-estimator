@@ -16,9 +16,6 @@ import json
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for matplotlib
 
-# Activate conda environment and source venv
-# Run: conda activate cv48 && source ~/venv310/bin/activate && python test_kalman_filter_pose.py
-
 from kalman_filter_pose_estimator import KalmanFilterPoseEstimator, RobustKalmanFilterPoseEstimator, pose_to_euler_tvec
 from static_pose_optimizer import StaticPoseOptimizer
 from gemiEd import *
@@ -37,15 +34,14 @@ ADAPTIVE_MULTIPLIER = 2.0
 FIXED_ERROR_THRESHOLD = 0.8
 FRAME_REJECT_THRESHOLD = 1.0
 
-# Kalman filter config (6D anisotropic noise for planar scene)
+# Kalman filter config (anisotropic noise for planar scene)
 # [qx, qy, qz, qrx, qry, qrz]
-# - qx, qy: small (XY motion well observable)
-# - qz: larger (depth less observable from vertical view)
-# - qrx, qry: larger (tilt less observable)
-# - qrz: small (yaw about optical axis well observable)
-KALMAN_PROCESS_NOISE = (0.1, 0.1, 0.5, 0.01, 0.01, 0.05)  # position std dev (mm)
-KALMAN_PROCESS_NOISE_VEL = (0.05, 0.05, 0.2, 0.005, 0.005, 0.02)  # velocity random walk
-KALMAN_MEASUREMENT_NOISE = 2.0  # pixels
+KALMAN_PROCESS_NOISE = (0.1, 0.1, 0.5, 0.01, 0.01, 0.05)
+KALMAN_VELOCITY_NOISE = (0.05, 0.05, 0.2, 0.005, 0.005, 0.02)
+KALMAN_MEASUREMENT_NOISE = 2.0
+KALMAN_VELOCITY_DAMPING = 0.98
+KALMAN_VELOCITY_ALPHA = 0.9
+KALMAN_MAHALANOBIS_THRESHOLD = 9.21  # chi2(0.01, 2 DOF)
 
 # Camera on robot end-effector (eye-to-hand extrinsic)
 eMc = np.array([
@@ -98,9 +94,7 @@ def two_round_pnp(pts2d, pts3d, K, dist):
     per_point_errors = compute_per_point_errors(pts3d, rvec1, tvec1, pts2d, K, dist)
     round1_error = per_point_errors.mean()
 
-    # Adaptive threshold
-    median_error = np.median(per_point_errors)
-    # threshold = max(median_error * ADAPTIVE_MULTIPLIER, FIXED_ERROR_THRESHOLD)
+    # Fixed threshold (as per task.txt, use fixed not adaptive)
     threshold = FIXED_ERROR_THRESHOLD
 
     inlier_mask = per_point_errors < threshold
@@ -125,24 +119,6 @@ def two_round_pnp(pts2d, pts3d, K, dist):
         return rvec1, tvec1, True, inlier_mask, per_point_errors, threshold
 
 
-def validate_cMo(cMo):
-    """Check if cMo is physically valid."""
-    R = cMo[:3, :3]
-    det_R = np.linalg.det(R)
-    if abs(det_R - 1.0) > 1e-6:
-        return False
-
-    tvec = cMo[:3, 3]
-    if tvec[2] <= 0:
-        return False
-
-    dist_val = np.linalg.norm(tvec)
-    if dist_val < 50 or dist_val > 3000:
-        return False
-
-    return True
-
-
 def getInferResult(model, img):
     """Run YOLO inference."""
     results = model(img)
@@ -158,15 +134,12 @@ if __name__ == '__main__':
     kalman = RobustKalmanFilterPoseEstimator(
         K, dist,
         process_noise=KALMAN_PROCESS_NOISE,
-        process_noise_vel=KALMAN_PROCESS_NOISE_VEL,
+        velocity_noise=KALMAN_VELOCITY_NOISE,
         measurement_noise=KALMAN_MEASUREMENT_NOISE,
-        max_innovation=15.0
+        velocity_damping=KALMAN_VELOCITY_DAMPING,
+        velocity_alpha=KALMAN_VELOCITY_ALPHA,
+        mahalanobis_threshold=KALMAN_MAHALANOBIS_THRESHOLD
     )
-
-    # Also initialize static optimizer for comparison
-    static_opt = StaticPoseOptimizer(K, dist)
-    static_opt.set_extrinsics(eMc)
-    static_opt.set_object_pts(obj_pts)
 
     # Load metadata
     meta_path = os.path.join(DATA_DIR, "metadata.json")
@@ -179,19 +152,16 @@ if __name__ == '__main__':
     frame_id = 0
     last_timestamp_ns = None
     last_kalman_bMo = None
-    last_static_bMo = None
 
-    # Trajectory storage for visualization
+    # Trajectory storage
     trajectory_kalman = []
-    trajectory_static = []
-    trajectory_pnp = []
     frame_ids = []
 
     for record in records:
         frame_id_val = record['frame_id']
         if frame_id_val < BEGIN_FRAME_ID:
             continue
-        
+
         current_timestamp_ns = record['camera_timestamp_ns']
         if last_timestamp_ns is not None:
             time_diff_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
@@ -276,15 +246,7 @@ if __name__ == '__main__':
             frame_id += 1
             continue
 
-        # Build cMo from PnP
-        cMo = np.eye(4)
-        cMo[:3, :3] = Rotation.from_rotvec(rvec).as_matrix()
-        cMo[:3, 3] = tvec
-
-        # Initial bMo
-        bMo_init = robot_pose @ eMc @ cMo
-
-        # ========== Kalman Filter Update ==========
+        # Kalman Filter Update
         timestamp_ns = record['camera_timestamp_ns']
         cMo_kalman, rvec_kf, tvec_kf, errors_kalman, is_updated = kalman.update_with_observation(
             pts2d, pts3d, rvec_pnp=rvec, tvec_pnp=tvec,
@@ -292,11 +254,22 @@ if __name__ == '__main__':
 
         if is_updated and cMo_kalman is not None:
             bMo_kalman = kalman.get_bMo(robot_pose, eMc)
+            vel = kalman.get_velocity()
+
             print(f"Kalman bMo: {pose_to_euler_tvec(bMo_kalman)}")
             print(f"Kalman cMo: {pose_to_euler_tvec(cMo_kalman)}")
             print(f"Kalman mean error: {errors_kalman.mean():.4f}px")
 
-            # Check if consistent with last pose
+            # Diagnostic output
+            print(f"  Velocity: trans={vel[3:6]}, rot={vel[0:3]}")
+            if len(kalman.mahal_history) > 0:
+                print(f"  Mahalanobis dist: {kalman.mahal_history[-1]:.3f}")
+            if len(kalman.cond_history) > 0:
+                print(f"  Condition number: {kalman.cond_history[-1]:.2e}")
+            cov_diag = kalman.get_covariance_diagonal()
+            print(f"  Cov diag: pos={cov_diag[3:6]}, vel={cov_diag[9:12]}")
+
+            # Check delta from last
             if last_kalman_bMo is not None:
                 delta = bMo_kalman @ np.linalg.inv(last_kalman_bMo)
                 delta_t = np.linalg.norm(delta[:3, 3])
@@ -305,106 +278,21 @@ if __name__ == '__main__':
 
             last_kalman_bMo = bMo_kalman.copy()
             trajectory_kalman.append(bMo_kalman.copy())
-
-        # ========== Static Optimizer Update ==========
-        if not static_opt.is_initialized():
-            static_opt.set_initial_pose(bMo_init)
-
-        if len(trajectory_static) == 0 or last_static_bMo is not None:
-            if static_opt.get_frame_count() >= 8:
-                static_opt.remove_oldest_frame()
-            static_opt.add_frame(frame_id, robot_pose, pts2d, pts3d)
-            static_opt.optimize()
-            bMo_static = static_opt.get_pose()
-            cMo_static = static_opt.compute_cMo(robot_pose)
-            last_static_bMo = bMo_static.copy()
-            trajectory_static.append(bMo_static.copy())
-            print(f"Static bMo: {pose_to_euler_tvec(bMo_static)}")
-            print(f"Static mean error: {static_opt.get_average_error():.4f}px")
-
-        # ========== PnP trajectory ==========
-        trajectory_pnp.append(bMo_init.copy())
-        frame_ids.append(frame_id_val)
-
-        # ========== Visualization ==========
-        obj_pt_names = ['L-top', 'R-top', 'L-mid', 'center', 'R-mid', 'L-bot', 'R-bot']
-        print(f"Per-point errors (px), threshold={used_threshold:.3f}:")
-        for i, (err, name) in enumerate(zip(per_point_errors, obj_pt_names[:len(per_point_errors)])):
-            marker = '[INLIER]' if inlier_mask[i] else '[OUTLIER]'
-            print(f"  Point {i} ({name}): {err:7.3f}px {marker}")
-
-        # Draw detected centers with inlier/outlier coloring
-        for i, (x, y) in enumerate(centers):
-            if i < len(inlier_mask):
-                if inlier_mask[i]:
-                    color = (0, 255, 0)  # Green = inlier
-                else:
-                    color = (0, 0, 255)  # Red = outlier
-            else:
-                color = (255, 255, 0)  # Cyan = unknown
-            cv.circle(img, (int(x), int(y)), 3, color, -1)
-            cv.putText(img, str(i), (int(x)+5, int(y)-5),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-
-        # Draw reprojection from Kalman
-        if cMo_kalman is not None:
-            cv.drawFrameAxes(img, K, dist, cMo_kalman[:3, :3], cMo_kalman[:3, 3:], 10, 3)
-            proj_kalman, _ = cv.projectPoints(pts3d,
-                                              Rotation.from_matrix(cMo_kalman[:3, :3]).as_rotvec(),
-                                              cMo_kalman[:3, 3:], K, dist)
-            for i, (x, y) in enumerate(pts2d):
-                x_proj, y_proj = proj_kalman[i][0]
-                cv.line(img, (int(x), int(y)), (int(x_proj), int(y_proj)), (0, 255, 0), 1)
-                cv.circle(img, (int(x_proj), int(y_proj)), 2, (255, 0, 0), -1)
-
-        # Draw reprojection from PnP
-        cv.drawFrameAxes(img, K, dist, rvec, tvec, 20, 1)
-
-        # Crop and display
-        vis = img[roi_y_min:roi_y_max, roi_x_min:roi_x_max]
-        vis = cv.resize(vis, None, fx=2, fy=2, interpolation=cv.INTER_NEAREST)
-        vis_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_vis.png")
-        cv.imwrite(vis_path, vis)
-
-        # Reprojection error visualization
-        if cMo_kalman is not None:
-            vis_err = img.copy()
-            proj_err, _ = cv.projectPoints(pts3d,
-                                           Rotation.from_matrix(cMo_kalman[:3, :3]).as_rotvec(),
-                                           cMo_kalman[:3, 3:], K, dist)
-            for i, (x, y) in enumerate(pts2d):
-                x_proj, y_proj = proj_err[i][0]
-                is_inlier = inlier_mask[i] if i < len(inlier_mask) else False
-                color = (0, 255, 0) if is_inlier else (0, 0, 255)
-                cv.circle(vis_err, (int(x), int(y)), 3, color, -1)
-                cv.circle(vis_err, (int(x_proj), int(y_proj)), 3, (255, 0, 0), -1)
-                cv.line(vis_err, (int(x), int(y)), (int(x_proj), int(y_proj)), color, 1)
-            vis_err = vis_err[roi_y_min:roi_y_max, roi_x_min:roi_x_max]
-            vis_err = cv.resize(vis_err, None, fx=2, fy=2, interpolation=cv.INTER_NEAREST)
-            vis_err_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_reproj_err.png")
-            cv.imwrite(vis_err_path, vis_err)
+            frame_ids.append(frame_id_val)
 
         frame_id += 1
 
     # ========== Trajectory Visualization ==========
     import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
 
     if len(trajectory_kalman) > 0:
-        # Extract positions
-        pos_kalman = np.array([p[:3, 3] for p in trajectory_kalman])
-        pos_static = np.array([p[:3, 3] for p in trajectory_static]) if len(trajectory_static) > 0 else None
-        pos_pnp = np.array([p[:3, 3] for p in trajectory_pnp]) if len(trajectory_pnp) > 0 else None
+        pos = np.array([p[:3, 3] for p in trajectory_kalman])
 
         fig = plt.figure(figsize=(18, 5))
 
         # 3D trajectory
         ax1 = fig.add_subplot(131, projection='3d')
-        ax1.plot(pos_kalman[:, 0], pos_kalman[:, 1], pos_kalman[:, 2], 'b.-', label='Kalman')
-        if pos_static is not None:
-            ax1.plot(pos_static[:, 0], pos_static[:, 1], pos_static[:, 2], 'g.-', label='Static')
-        if pos_pnp is not None:
-            ax1.plot(pos_pnp[:, 0], pos_pnp[:, 1], pos_pnp[:, 2], 'r.-', label='PnP')
+        ax1.plot(pos[:, 0], pos[:, 1], pos[:, 2], 'b.-', label='Kalman')
         ax1.set_xlabel('X (mm)')
         ax1.set_ylabel('Y (mm)')
         ax1.set_zlabel('Z (mm)')
@@ -413,11 +301,7 @@ if __name__ == '__main__':
 
         # XY plane
         ax2 = fig.add_subplot(132)
-        ax2.plot(pos_kalman[:, 0], pos_kalman[:, 1], 'b.-', label='Kalman')
-        if pos_static is not None:
-            ax2.plot(pos_static[:, 0], pos_static[:, 1], 'g.-', label='Static')
-        if pos_pnp is not None:
-            ax2.plot(pos_pnp[:, 0], pos_pnp[:, 1], 'r.-', label='PnP')
+        ax2.plot(pos[:, 0], pos[:, 1], 'b.-', label='Kalman')
         ax2.set_xlabel('X (mm)')
         ax2.set_ylabel('Y (mm)')
         ax2.set_title('XY Plane')
@@ -427,10 +311,10 @@ if __name__ == '__main__':
 
         # Position vs frame
         ax3 = fig.add_subplot(133)
-        frames = list(range(len(pos_kalman)))
-        ax3.plot(frames, pos_kalman[:, 0], 'r.-', label='X')
-        ax3.plot(frames, pos_kalman[:, 1], 'g.-', label='Y')
-        ax3.plot(frames, pos_kalman[:, 2], 'b.-', label='Z')
+        frames = list(range(len(pos)))
+        ax3.plot(frames, pos[:, 0], 'r.-', label='X')
+        ax3.plot(frames, pos[:, 1], 'g.-', label='Y')
+        ax3.plot(frames, pos[:, 2], 'b.-', label='Z')
         ax3.set_xlabel('Frame')
         ax3.set_ylabel('Position (mm)')
         ax3.set_title('Kalman Position vs Frame')
@@ -444,13 +328,32 @@ if __name__ == '__main__':
         # Error history
         if len(kalman.error_history) > 0:
             fig2, ax = plt.subplots()
-            ax.plot(kalman.error_history, 'b.-')
+            ax.plot(kalman.error_history, 'b.-', label='Mean Error')
+            if len(kalman.mahal_history) > 0:
+                ax2 = ax.twinx()
+                ax2.plot(kalman.mahal_history, 'r.-', alpha=0.7, label='Mahalanobis')
+                ax2.set_ylabel('Mahalanobis Distance', color='r')
             ax.set_xlabel('Frame')
-            ax.set_ylabel('Mean Reprojection Error (px)')
-            ax.set_title('Kalman Filter Reprojection Error History')
+            ax.set_ylabel('Mean Reprojection Error (px)', color='b')
+            ax.set_title('Kalman Filter Errors')
             ax.grid(True)
             plt.savefig(os.path.join(RESULT_DIR, 'error_history.png'), dpi=150)
             plt.close(fig2)
+
+        # Velocity history
+        if len(kalman.velocity_history) > 0:
+            vel_hist = np.array(kalman.velocity_history)
+            fig3, axes = plt.subplots(2, 3, figsize=(15, 8))
+            vel_labels = ['vx', 'vy', 'vz', 'wx', 'wy', 'wz']
+            for i, (ax, label) in enumerate(zip(axes.flat, vel_labels)):
+                ax.plot(vel_hist[:, i], 'b.-')
+                ax.set_xlabel('Frame')
+                ax.set_ylabel(label)
+                ax.set_title(f'Velocity {label}')
+                ax.grid(True)
+            plt.tight_layout()
+            plt.savefig(os.path.join(RESULT_DIR, 'velocity_history.png'), dpi=150)
+            plt.close(fig3)
 
     print(f"\nResults saved to {RESULT_DIR}")
     print(f"Processed {frame_id} frames")
