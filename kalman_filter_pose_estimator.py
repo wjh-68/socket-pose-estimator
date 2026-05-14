@@ -60,8 +60,8 @@ class KalmanFilterPoseEstimator:
     """
 
     def __init__(self, K, dist,
-                 process_noise=(0.1, 0.1, 0.5, 0.01, 0.01, 0.05),  # [qx, qy, qz, qrx, qry, qrz]
-                 velocity_noise=(0.05, 0.05, 0.2, 0.005, 0.005, 0.02),
+                 process_noise=(0.1, 0.1, 0.5, 0.05, 0.05, 0.01),  # [qx, qy, qz, qrx, qry, qrz]
+                 velocity_noise=(0.05, 0.05, 0.2, 0.02, 0.02, 0.005),
                  measurement_noise=2.0,
                  velocity_damping=0.98,
                  velocity_alpha=0.9,

@@ -26,7 +26,7 @@ model = YOLO("checkpoint/best.pt")
 # ============ Config ============
 DATA_DIR = "dataset/save_data3/20260511_120244"
 RESULT_DIR = "result/save_data3/20260511_120244/kalman_filter"
-MAX_FRAMES = 50  # Limit for quick test, -1 for all
+MAX_FRAMES = -1  # Limit for quick test, -1 for all
 BEGIN_FRAME_ID = 1180
 
 # PnP thresholds
@@ -36,8 +36,8 @@ FRAME_REJECT_THRESHOLD = 1.0
 
 # Kalman filter config (anisotropic noise for planar scene)
 # [qx, qy, qz, qrx, qry, qrz]
-KALMAN_PROCESS_NOISE = (0.1, 0.1, 0.5, 0.01, 0.01, 0.05)
-KALMAN_VELOCITY_NOISE = (0.05, 0.05, 0.2, 0.005, 0.005, 0.02)
+KALMAN_PROCESS_NOISE = (0.1, 0.1, 0.5, 0.05, 0.05, 0.01)
+KALMAN_VELOCITY_NOISE = (0.05, 0.05, 0.2, 0.02, 0.02, 0.005)
 KALMAN_MEASUREMENT_NOISE = 2.0
 KALMAN_VELOCITY_DAMPING = 0.98
 KALMAN_VELOCITY_ALPHA = 0.9
@@ -222,9 +222,9 @@ if __name__ == '__main__':
         draw_ellipse(roi, ellipses)
 
         final_pts, status, centers = matcher.solve(ellipses, [*(result[0][:2]), *(result[0][2:]-result[0][:2])])
-        print(f'Found {len(final_pts)} points')
+        print(f'Found {len(final_pts) if final_pts is not None else 0} points')
 
-        if final_pts is None or centers.shape[0] < 4:
+        if final_pts is None or centers is None or centers.shape[0] < 7:
             print(f"Not enough points for PnP")
             frame_id += 1
             continue
