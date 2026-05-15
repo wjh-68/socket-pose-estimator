@@ -55,6 +55,26 @@ obj_pts = np.array([
             [-8.0, -13.9, 0.0], [8.0, -13.9, 0.0]
         ], dtype=np.float64)
 
+# Optimization weight configuration
+PRIOR_SIGMA = np.array([
+    np.deg2rad(5.0),
+    np.deg2rad(5.0),
+    np.deg2rad(1.0),
+    0.5,
+    0.5,
+    10.0
+], dtype=np.float64)
+
+POINT_SIGMAS = np.array([
+    2.0,  # top-left small hole
+    2.0,  # top-right small hole
+    1.0,  # mid-left large hole
+    1.0,  # center large hole
+    1.0,  # mid-right large hole
+    1.0,  # bottom-left large hole
+    1.0   # bottom-right large hole
+], dtype=np.float64)
+
 
 def solvePnP_IPPE(pts2d, pts3d, K, dist):
     """Wrapper for cv2.solvePnP with IPPE method and validity checks"""
@@ -160,7 +180,7 @@ if __name__ == '__main__':
 
     os.makedirs(RESULT_DIR, exist_ok=True)
 
-    optimizer = StaticPoseOptimizer(K, dist)
+    optimizer = StaticPoseOptimizer(K, dist, prior_sigma=PRIOR_SIGMA, point_sigmas=POINT_SIGMAS)
     optimizer.set_extrinsics(eMc)
     optimizer.set_object_pts(obj_pts)
 

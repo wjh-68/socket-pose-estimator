@@ -15,11 +15,12 @@ from scipy.spatial.transform import Rotation
 class StaticPoseOptimizer:
     """Shared global pose + per-frame perturbation optimizer."""
 
-    def __init__(self, K, dist, prior_sigma=None):
+    def __init__(self, K, dist, prior_sigma=None, point_sigmas=None):
         self.K = np.array(K, dtype=np.float64)
         self.dist = np.array(dist, dtype=np.float64)
         self.eMc = np.eye(4, dtype=np.float64)
         self.obj_pts = None
+        self.point_sigmas = None  # per-point reprojection uncertainty in pixels
 
         self._frames = []
         self._pose = None
@@ -57,11 +58,42 @@ class StaticPoseOptimizer:
         else:
             self.prior_sigma = np.array(prior_sigma, dtype=np.float64)
 
+        # Set point sigmas if provided
+        if point_sigmas is not None:
+            self.set_point_sigmas(point_sigmas)
+
     def set_extrinsics(self, eMc):
         self.eMc = np.array(eMc, dtype=np.float64)
 
     def set_object_pts(self, obj_pts):
         self.obj_pts = np.array(obj_pts, dtype=np.float64)
+        # Initialize point_sigmas to default (all 1.0) if not set
+        if self.point_sigmas is None:
+            self.point_sigmas = np.ones(len(self.obj_pts), dtype=np.float64)
+
+    def set_point_sigmas(self, point_sigmas):
+        """Set per-point reprojection uncertainty (in pixels).
+        
+        Args:
+            point_sigmas: array of shape (N,) with sigma for each 3D point.
+                         sigma_i > 0: larger sigma = lower weight (noisier point)
+                         Default: all 1.0 (isotropic, equal weight)
+        """
+        point_sigmas = np.array(point_sigmas, dtype=np.float64)
+        
+        # Validate dimension if obj_pts is already set
+        if self.obj_pts is not None:
+            if len(point_sigmas) != len(self.obj_pts):
+                raise ValueError(
+                    f"point_sigmas length {len(point_sigmas)} does not match "
+                    f"obj_pts length {len(self.obj_pts)}"
+                )
+        
+        # Validate all sigmas > 0
+        if np.any(point_sigmas <= 0):
+            raise ValueError("All point_sigmas must be positive")
+        
+        self.point_sigmas = point_sigmas
 
     def is_initialized(self):
         return self._pose is not None and len(self._frames) > 0
@@ -166,13 +198,27 @@ class StaticPoseOptimizer:
         elif self._pose is None:
             raise ValueError("No initial pose set. Call set_initial_pose() or pass pose_init.")
 
+        if self.point_sigmas is None:
+            if self.obj_pts is not None:
+                self.point_sigmas = np.ones(len(self.obj_pts), dtype=np.float64)
+            else:
+                self.point_sigmas = np.ones(len(self._frames[0]['pts3d']), dtype=np.float64)
+
+        # Sanity check: ensure point_sigmas length matches each frame's point count
+        for frame in self._frames:
+            if len(self.point_sigmas) != len(frame['pts3d']):
+                raise ValueError(
+                    f"point_sigmas length {len(self.point_sigmas)} does not match "
+                    f"frame pts3d length {len(frame['pts3d'])}"
+                )
+
         n_frames = len(self._frames)
         initial_params = np.zeros(6 + 6 * n_frames, dtype=np.float64)
         initial_params[:6] = self._pose_params
 
         optimizer = _StaticPoseOptimizerFunctor(
             self._frames, self.K, self.dist,
-            self.eMc, self.prior_sigma,
+            self.eMc, self.prior_sigma, self.point_sigmas,
             self.loss, self.loss_scale
         )
 
@@ -207,11 +253,14 @@ class StaticPoseOptimizer:
         self._last_optimized_params = result.x.copy()
 
         final_frame_errors = self._compute_all_frame_errors(optimizer, result.x)
+        unweighted_rms, weighted_rms = self._compute_reprojection_statistics(result.x)
         self._optimization_history.append({
             'iteration': result.nfev,
             'cost': float(np.sum(optimizer(result.x) ** 2)),
             'avg_error': float(np.mean(final_frame_errors)),
             'max_error': float(np.max(final_frame_errors)),
+            'weighted_reproj_rms': weighted_rms,
+            'unweighted_reproj_rms': unweighted_rms,
             'params': result.x.copy(),
             'pose': self._pose.copy(),
             'success': result.success,
@@ -289,6 +338,19 @@ class StaticPoseOptimizer:
             print(f"Average perturbation magnitude: {self._diagnostics['avg_perturbation_magnitude']:.4f}")
             print("Per-axis perturbation std (rx,ry,rz,tx,ty,tz): " +
                   ", ".join(f"{x:.4f}" for x in self._diagnostics['perturbation_std']))
+            if 'weighted_reproj_rms' in self._diagnostics:
+                print(f"Weighted reprojection RMS:   {self._diagnostics['weighted_reproj_rms']:.4f} px")
+            if 'unweighted_reproj_rms' in self._diagnostics:
+                print(f"Unweighted reprojection RMS: {self._diagnostics['unweighted_reproj_rms']:.4f} px")
+            
+            if 'point_sigmas' in self._diagnostics:
+                print(f"\nPoint Sigma Configuration (per-point reprojection uncertainty):")
+                print(f"  Mean sigma:   {self._diagnostics['avg_point_sigma']:.4f} px")
+                print(f"  Min sigma:    {self._diagnostics['min_point_sigma']:.4f} px")
+                print(f"  Max sigma:    {self._diagnostics['max_point_sigma']:.4f} px")
+                sigmas = self._diagnostics['point_sigmas']
+                for i, sigma in enumerate(sigmas):
+                    print(f"  Point {i}: sigma={sigma:.4f} px")
 
         if self._frame_results:
             print("\n--- Per-Frame Results ---")
@@ -396,6 +458,42 @@ class StaticPoseOptimizer:
         except Exception:
             return np.inf
 
+    def _compute_reprojection_statistics(self, params):
+        bMo = self._params_to_pose(params[:6])
+        all_errors = []
+        all_weighted_errors = []
+
+        for frame_index, frame in enumerate(self._frames):
+            bMe = frame['robot_pose']
+            eMb = np.linalg.inv(bMe)
+            eMc_inv = np.linalg.inv(self.eMc)
+            cMo_nominal = eMc_inv @ eMb @ bMo
+            delta = params[6 + 6 * frame_index: 6 + 6 * (frame_index + 1)]
+            cMo = self.apply_perturbation(cMo_nominal, delta)
+            proj = self._project(frame['pts3d'], cMo[:3, :3], cMo[:3, 3])
+            err = proj - frame['pts2d']
+            all_errors.append(err)
+
+            if self.point_sigmas is not None:
+                if len(self.point_sigmas) != len(frame['pts3d']):
+                    raise ValueError(
+                        f"point_sigmas length {len(self.point_sigmas)} does not match "
+                        f"frame pts3d length {len(frame['pts3d'])}"
+                    )
+                weighted_err = err / self.point_sigmas[:, np.newaxis]
+            else:
+                weighted_err = err
+            all_weighted_errors.append(weighted_err)
+
+        if len(all_errors) == 0:
+            return 0.0, 0.0
+
+        all_errors = np.vstack(all_errors)
+        all_weighted_errors = np.vstack(all_weighted_errors)
+        unweighted_rms = float(np.sqrt(np.mean(all_errors ** 2)))
+        weighted_rms = float(np.sqrt(np.mean(all_weighted_errors ** 2)))
+        return unweighted_rms, weighted_rms
+
     def _record_diagnostics(self, result):
         if self._last_optimized_params is None:
             return
@@ -407,12 +505,25 @@ class StaticPoseOptimizer:
         self._diagnostics['perturbation_mean'] = np.mean(deltas, axis=0).tolist() if norms.size else [0.0] * 6
         self._diagnostics['condition_number'] = self._compute_condition_number(result.jac)
 
+        if result.x is not None:
+            unweighted_rms, weighted_rms = self._compute_reprojection_statistics(result.x)
+            self._diagnostics['unweighted_reproj_rms'] = unweighted_rms
+            self._diagnostics['weighted_reproj_rms'] = weighted_rms
+        
+        # Record point sigma configuration
+        if self.point_sigmas is not None:
+            self._diagnostics['point_sigmas'] = self.point_sigmas.tolist()
+            self._diagnostics['avg_point_sigma'] = float(np.mean(self.point_sigmas))
+            self._diagnostics['min_point_sigma'] = float(np.min(self.point_sigmas))
+            self._diagnostics['max_point_sigma'] = float(np.max(self.point_sigmas))
+
 
 class _StaticPoseOptimizerFunctor:
-    def __init__(self, frames, K, dist, eMc, prior_sigma, loss, loss_scale):
+    def __init__(self, frames, K, dist, eMc, prior_sigma, point_sigmas, loss, loss_scale):
         self.frames = frames
         self.eMc = np.array(eMc, dtype=np.float64)
         self.prior_sigma = np.array(prior_sigma, dtype=np.float64)
+        self.point_sigmas = point_sigmas  # shape (N,), per-point uncertainty
         self.loss = loss
         self.loss_scale = loss_scale
 
@@ -435,7 +546,26 @@ class _StaticPoseOptimizerFunctor:
             cMo = StaticPoseOptimizer.apply_perturbation(cMo_nominal, delta)
 
             proj = self._project(frame['pts3d'], cMo[:3, :3], cMo[:3, 3])
-            residuals.extend((proj - frame['pts2d']).flatten())
+            
+            # Compute reprojection error
+            err = proj - frame['pts2d']  # shape (N, 2)
+            
+            # Apply per-point whitening: divide by point sigma
+            # point_sigmas shape: (N,), err shape: (N, 2)
+            if self.point_sigmas is not None:
+                if len(frame['pts3d']) != len(self.point_sigmas):
+                    raise ValueError(
+                        f"point_sigmas length {len(self.point_sigmas)} does not match "
+                        f"frame pts3d length {len(frame['pts3d'])}"
+                    )
+                whitened_err = err / self.point_sigmas[:, np.newaxis]
+            else:
+                whitened_err = err
+            
+            # Flatten and add to residuals
+            residuals.extend(whitened_err.flatten())
+            
+            # Add prior penalty on perturbation delta
             residuals.extend((delta / self.prior_sigma).flatten())
 
         return np.array(residuals, dtype=np.float64)
