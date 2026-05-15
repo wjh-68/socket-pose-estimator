@@ -45,6 +45,11 @@ class StaticPoseOptimizer:
         self._pose = None  # current optimized pose (4x4)
         self._pose_params = None  # 6D params (rvec, tvec)
 
+        # 记录中间数据和结果
+        self._optimization_history = []  # 优化过程记录列表
+        self._frame_results = []  # 每帧的结果列表
+        self._initial_pose = None  # 初始位姿
+
         # BA configuration
         self.loss = 'huber'
         self.loss_scale = 0.3
@@ -78,6 +83,7 @@ class StaticPoseOptimizer:
         """
         self._pose = np.array(pose, dtype=np.float64)
         self._pose_params = self._pose_to_params(self._pose)
+        self._initial_pose = self._pose.copy()
 
     def add_frame(self, frame_index, robot_pose, pts2d, pts3d=None):
         """
@@ -227,10 +233,26 @@ class StaticPoseOptimizer:
 
         initial_params = self._pose_params.copy()
 
+        # 创建优化器functor
         optimizer = _StaticPoseOptimizerFunctor(
             self._frames, self.K, self.dist,
             self.eMc, self.loss, self.loss_scale
         )
+
+        # 记录初始状态
+        self._optimization_history = []
+        self._frame_results = []
+
+        # 记录初始误差
+        initial_errors = self._compute_all_frame_errors(optimizer, initial_params)
+        self._optimization_history.append({
+            'iteration': 0,
+            'cost': float(np.sum(initial_errors)),
+            'avg_error': float(np.mean(initial_errors)),
+            'max_error': float(np.max(initial_errors)),
+            'params': initial_params.copy(),
+            'pose': self._params_to_pose(initial_params).copy()
+        })
 
         result = least_squares(
             optimizer,
@@ -245,7 +267,173 @@ class StaticPoseOptimizer:
 
         self._pose = self._params_to_pose(result.x)
         self._pose_params = result.x
+
+        # 记录最终状态
+        final_errors = self._compute_all_frame_errors(optimizer, result.x)
+        self._optimization_history.append({
+            'iteration': result.nfev,
+            'cost': float(np.sum(final_errors)),
+            'avg_error': float(np.mean(final_errors)),
+            'max_error': float(np.max(final_errors)),
+            'params': result.x.copy(),
+            'pose': self._pose.copy(),
+            'success': result.success,
+            'message': result.message
+        })
+
+        # 记录每帧详细结果
+        self._record_frame_results(optimizer, result.x)
+
         return result
+
+    def _compute_all_frame_errors(self, optimizer, params):
+        """计算所有帧的残差平方和。"""
+        residuals = optimizer(params)
+        n_frames = len(self._frames)
+        errors_per_frame = []
+        idx = 0
+        for frame in self._frames:
+            n_pts = len(frame['pts2d'])
+            frame_residuals = residuals[idx:idx + n_pts * 2]
+            errors = np.sqrt(np.sum(frame_residuals.reshape(n_pts, 2) ** 2, axis=1))
+            errors_per_frame.append(np.mean(errors))
+            idx += n_pts * 2
+        return np.array(errors_per_frame)
+
+    def _record_frame_results(self, optimizer, params):
+        """记录每帧的详细结果。"""
+        bMo = self._params_to_pose(params)
+        for frame in self._frames:
+            bMe = frame['robot_pose']
+            pts3d = frame['pts3d']
+            pts2d = frame['pts2d']
+
+            eMb = np.linalg.inv(bMe)
+            eMc_inv = np.linalg.inv(self.eMc)
+            cMo = eMc_inv @ eMb @ bMo
+
+            rvec = Rotation.from_matrix(cMo[:3, :3]).as_rotvec()
+            tvec = cMo[:3, 3]
+
+            proj = optimizer._project(pts3d, rvec, tvec)
+            errors = np.linalg.norm(proj - pts2d, axis=1)
+
+            self._frame_results.append({
+                'frame_index': frame['index'],
+                'n_points': len(pts2d),
+                'mean_error': float(np.mean(errors)),
+                'max_error': float(np.max(errors)),
+                'min_error': float(np.min(errors)),
+                'std_error': float(np.std(errors)),
+                'total_error': float(np.sum(errors)),
+                'pts2d': pts2d.copy(),
+                'proj': proj.copy(),
+                'errors': errors.copy(),
+                'cMo': cMo.copy()
+            })
+
+    def get_optimization_history(self):
+        """
+        获取优化过程记录列表。
+
+        Returns:
+            list: 优化历史列表，每个元素包含迭代信息
+        """
+        return self._optimization_history.copy()
+
+    def get_frame_results(self):
+        """
+        获取每帧的详细结果列表。
+
+        Returns:
+            list: 每帧结果列表
+        """
+        return self._frame_results.copy()
+
+    def get_initial_pose(self):
+        """获取初始位姿。"""
+        return self._initial_pose.copy() if self._initial_pose is not None else None
+
+    def print_summary(self):
+        """打印优化结果摘要。"""
+        if not self._optimization_history:
+            print("No optimization history available.")
+            return
+
+        print("\n" + "=" * 60)
+        print("Optimization Summary")
+        print("=" * 60)
+
+        # 初始和最终位姿
+        initial = self._optimization_history[0]
+        final = self._optimization_history[-1]
+
+        print("\n--- Pose Comparison ---")
+        print(f"Initial: t={initial['pose'][:3, 3]}")
+        print(f"Final:   t={final['pose'][:3, 3]}")
+
+        initial_euler = Rotation.from_matrix(initial['pose'][:3, :3]).as_euler('xyz', degrees=True)
+        final_euler = Rotation.from_matrix(final['pose'][:3, :3]).as_euler('xyz', degrees=True)
+        print(f"Initial euler (xyz deg): {initial_euler}")
+        print(f"Final euler (xyz deg): {final_euler}")
+
+        print("\n--- Error Evolution ---")
+        print(f"Initial avg error: {initial['avg_error']:.4f} px")
+        print(f"Final avg error:   {final['avg_error']:.4f} px")
+        print(f"Error reduction:  {(1 - final['avg_error']/initial['avg_error'])*100:.1f}%")
+
+        # 每帧结果
+        if self._frame_results:
+            print("\n--- Per-Frame Results ---")
+            print(f"{'Frame':>6} {'N_pts':>6} {'Mean':>8} {'Max':>8} {'Std':>8}")
+            print("-" * 40)
+            for fr in self._frame_results:
+                print(f"{fr['frame_index']:>6} {fr['n_points']:>6} "
+                      f"{fr['mean_error']:>8.3f} {fr['max_error']:>8.3f} {fr['std_error']:>8.3f}")
+            print("-" * 40)
+            total_error = sum(fr['total_error'] for fr in self._frame_results)
+            total_pts = sum(fr['n_points'] for fr in self._frame_results)
+            print(f"{'Total':>6} {total_pts:>6} {total_error/total_pts:>8.3f}")
+
+        print("\n" + "=" * 60)
+
+    def export_to_dict(self):
+        """
+        导出会话数据到字典格式，便于序列化和进一步分析。
+
+        Returns:
+            dict: 包含所有中间数据和结果的字典
+        """
+        if not self._optimization_history:
+            return None
+
+        final = self._optimization_history[-1]
+        return {
+            'initial_pose': self._initial_pose.tolist() if self._initial_pose is not None else None,
+            'optimized_pose': final['pose'].tolist(),
+            'initial_avg_error': self._optimization_history[0]['avg_error'],
+            'final_avg_error': final['avg_error'],
+            'error_reduction_percent': (1 - final['avg_error'] / self._optimization_history[0]['avg_error']) * 100,
+            'optimization_history': [
+                {
+                    'iteration': h['iteration'],
+                    'cost': h['cost'],
+                    'avg_error': h['avg_error'],
+                    'max_error': h['max_error']
+                } for h in self._optimization_history
+            ],
+            'frame_results': [
+                {
+                    'frame_index': fr['frame_index'],
+                    'n_points': fr['n_points'],
+                    'mean_error': fr['mean_error'],
+                    'max_error': fr['max_error'],
+                    'min_error': fr['min_error'],
+                    'std_error': fr['std_error'],
+                    'total_error': fr['total_error']
+                } for fr in self._frame_results
+            ]
+        }
 
     def set_ba_config(self, loss='huber', loss_scale=1.0, ftol=1e-8, xtol=1e-8, max_nfev=500):
         """Configure bundle adjustment parameters."""

@@ -41,7 +41,7 @@ KALMAN_VELOCITY_NOISE = (0.05, 0.05, 0.2, 0.02, 0.02, 0.005)
 KALMAN_MEASUREMENT_NOISE = 2.0
 KALMAN_VELOCITY_DAMPING = 0.98
 KALMAN_VELOCITY_ALPHA = 0.9
-KALMAN_MAHALANOBIS_THRESHOLD = 9.21  # chi2(0.01, 2 DOF)
+KALMAN_MAHALANOBIS_CONFIDENCE = 0.99  # confidence level for Mahalanobis gating (replaced threshold 9.21)
 
 # Camera on robot end-effector (eye-to-hand extrinsic)
 eMc = np.array([
@@ -138,7 +138,7 @@ if __name__ == '__main__':
         measurement_noise=KALMAN_MEASUREMENT_NOISE,
         velocity_damping=KALMAN_VELOCITY_DAMPING,
         velocity_alpha=KALMAN_VELOCITY_ALPHA,
-        mahalanobis_threshold=KALMAN_MAHALANOBIS_THRESHOLD
+        mahalanobis_confidence=KALMAN_MAHALANOBIS_CONFIDENCE
     )
 
     # Load metadata
