@@ -523,16 +523,21 @@ if __name__ == '__main__':
               f"{rec['pnp_error_final']:>8.4f} {rec['pnp_error_ba']:>8.4f}")
     print("-" * 80)
 
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 120)
     print("Optimization Results Summary")
-    print("=" * 80)
-    print(f"{'FrameID':>8} {'Frames':>6} {'bMo_t_x':>10} {'bMo_t_y':>10} {'bMo_t_z':>10} {'FrErr':>8} {'AvgErr':>8}")
-    print("-" * 80)
+    print("=" * 120)
+    print(f"{'FrameID':>8} {'Frames':>6} {'bMo_t_x':>10} {'bMo_t_y':>10} {'bMo_t_z':>10} "
+          f"{'bMo_rx':>8} {'bMo_ry':>8} {'bMo_rz':>8} "
+          f"{'cMo_rx':>8} {'cMo_ry':>8} {'cMo_rz':>8} "
+          f"{'FrErr':>8} {'AvgErr':>8}")
+    print("-" * 120)
     for rec in optimize_records:
         print(f"{rec['frame_id']:>8} {rec['n_frames_in_optimizer']:>6} "
               f"{rec['bMo_tvec'][0]:>10.2f} {rec['bMo_tvec'][1]:>10.2f} {rec['bMo_tvec'][2]:>10.2f} "
+              f"{rec['bMo_euler'][0]:>8.2f} {rec['bMo_euler'][1]:>8.2f} {rec['bMo_euler'][2]:>8.2f} "
+              f"{rec['cMo_euler'][0]:>8.2f} {rec['cMo_euler'][1]:>8.2f} {rec['cMo_euler'][2]:>8.2f} "
               f"{rec['frame_error']:>8.4f} {rec['avg_error'] if rec['avg_error'] is not None else 0:>8.4f}")
-    print("=" * 80)
+    print("=" * 120)
 
     # ============ 绘制各分量随Frame的变化 ============
     import matplotlib.pyplot as plt
@@ -641,15 +646,15 @@ if __name__ == '__main__':
     if len(frame_records) > 0:
         frames = [r['frame_id'] for r in frame_records]
 
-        # bMo 欧拉角 (optimized)
-        bMo_euler_x = [r['bMo_optimized'][0][0] for r in frame_records]
-        bMo_euler_y = [r['bMo_optimized'][1][0] for r in frame_records]
-        bMo_euler_z = [r['bMo_optimized'][2][0] for r in frame_records]
+        # bMo 欧拉角 (optimized) - 从4x4矩阵转换
+        bMo_euler_x = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][0] for r in frame_records]
+        bMo_euler_y = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][1] for r in frame_records]
+        bMo_euler_z = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][2] for r in frame_records]
 
-        # bMo 欧拉角 (PnP)
-        bMo_pnp_euler_x = [r['bMo_init'][0][0] for r in frame_records]
-        bMo_pnp_euler_y = [r['bMo_init'][1][0] for r in frame_records]
-        bMo_pnp_euler_z = [r['bMo_init'][2][0] for r in frame_records]
+        # bMo 欧拉角 (PnP) - 从4x4矩阵转换
+        bMo_pnp_euler_x = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][0] for r in frame_records]
+        bMo_pnp_euler_y = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][1] for r in frame_records]
+        bMo_pnp_euler_z = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][2] for r in frame_records]
 
         fig, axes = plt.subplots(3, 1, figsize=(12, 10))
         fig.suptitle('bMo Euler Angles (xyz) vs Frame', fontsize=14)
@@ -685,15 +690,15 @@ if __name__ == '__main__':
         print(f"Saved bMo euler plot to {bmo_euler_path}")
         plt.close()
 
-        # cMo 欧拉角 (optimized)
-        cMo_euler_x = [r['cMo_optimized'][0][0] for r in frame_records]
-        cMo_euler_y = [r['cMo_optimized'][1][0] for r in frame_records]
-        cMo_euler_z = [r['cMo_optimized'][2][0] for r in frame_records]
+        # cMo 欧拉角 (optimized) - 从4x4矩阵转换
+        cMo_euler_x = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][0] for r in frame_records]
+        cMo_euler_y = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][1] for r in frame_records]
+        cMo_euler_z = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][2] for r in frame_records]
 
-        # cMo 欧拉角 (PnP)
-        cMo_pnp_euler_x = [r['cMo'][0][0] for r in frame_records]
-        cMo_pnp_euler_y = [r['cMo'][1][0] for r in frame_records]
-        cMo_pnp_euler_z = [r['cMo'][2][0] for r in frame_records]
+        # cMo 欧拉角 (PnP) - 从4x4矩阵转换
+        cMo_pnp_euler_x = [pose_to_euler_tvec(np.array(r['cMo']))[0][0] for r in frame_records]
+        cMo_pnp_euler_y = [pose_to_euler_tvec(np.array(r['cMo']))[0][1] for r in frame_records]
+        cMo_pnp_euler_z = [pose_to_euler_tvec(np.array(r['cMo']))[0][2] for r in frame_records]
 
         fig, axes = plt.subplots(3, 1, figsize=(12, 10))
         fig.suptitle('cMo Euler Angles (xyz) vs Frame', fontsize=14)
