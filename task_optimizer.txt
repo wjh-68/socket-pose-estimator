@@ -1,0 +1,335 @@
+请重构当前 StaticPoseOptimizer。
+
+当前实现：
+
+* 只优化全局 static pose:
+  bMo
+* 每帧：
+  cMo = inv(eMc) @ inv(bMe) @ bMo
+* residual:
+  reprojection error
+
+当前形式：
+
+min Σ || reprojection ||²
+
+但该实现存在问题：
+
+* 所有误差都被强制由 bMo 吸收
+* timing mismatch
+* robot interpolation error
+* hand-eye residual
+* planar degeneracy
+
+都会污染：
+bMo
+
+尤其：
+
+* z
+* rx
+* ry
+
+会明显漂移。
+
+目标：
+
+将当前 optimizer 改造成：
+
+“shared global pose + per-frame perturbation”
+的 probabilistic bundle adjustment。
+
+========================
+核心修改
+====
+
+1. 参数向量扩展
+
+当前：
+
+params.shape = (6,)
+
+只包含：
+
+bMo
+
+现在改成：
+
+params.shape = (6 + 6*N,)
+
+其中：
+
+前6维：
+global bMo
+
+后续：
+每帧 perturbation：
+
+delta_xi_i
+
+即：
+
+[
+bMo(6),
+delta1(6),
+delta2(6),
+...
+]
+
+其中：
+
+delta_i =
+[rx, ry, rz, tx, ty, tz]
+
+========================
+
+2. 初始化参数
+
+原来：
+
+initial_params = pose_params
+
+现在：
+
+N = len(frames)
+
+initial_params =
+np.zeros(6 + 6*N)
+
+initial_params[:6] =
+pose_params
+
+所有 perturbation 初始为0。
+
+========================
+
+3. nominal pose
+
+每帧：
+
+不要直接：
+
+cMo = inv(eMc) @ inv(bMe) @ bMo
+
+而是：
+
+先计算：
+
+cMo_nominal =
+inv(eMc) @ inv(bMe) @ bMo
+
+========================
+
+4. 增加 frame perturbation
+
+每帧：
+
+读取：
+
+delta_i =
+params[6+6*i : 6+6*(i+1)]
+
+然后：
+
+cMo =
+cMo_nominal ⊕ delta_i
+
+不要使用矩阵加法。
+
+必须使用：
+
+SE(3) perturbation。
+
+========================
+
+5. 实现 apply_perturbation()
+
+增加：
+
+apply_perturbation(T, delta)
+
+其中：
+
+delta:
+[rx, ry, rz, tx, ty, tz]
+
+实现：
+
+dR =
+Rotation.from_rotvec(
+delta[:3]
+).as_matrix()
+
+dt = delta[3:]
+
+T_delta = eye(4)
+
+T_delta[:3,:3] = dR
+T_delta[:3,3] = dt
+
+return T @ T_delta
+
+========================
+
+6. reprojection residual 保持
+
+继续使用：
+
+proj - pts2d
+
+作为 reprojection residual。
+
+当前：
+
+默认：
+pixel covariance = identity
+
+这是合理的。
+
+因为：
+
+默认假设：
+
+* u/v noise isotropic
+* points independent
+* same pixel uncertainty
+
+因此：
+
+无需增加复杂 pixel covariance。
+
+========================
+
+7. 增加 perturbation prior residual（最重要）
+
+新增：
+
+prior residual：
+
+r_prior =
+delta_i / sigma
+
+其中：
+
+sigma 为 anisotropic prior standard deviation。
+
+推荐：
+
+sigma = np.array([
+
+```
+np.deg2rad(5),  # rx
+np.deg2rad(5),  # ry
+np.deg2rad(1),  # rz
+
+0.5,            # tx
+0.5,            # ty
+10.0            # tz
+```
+
+])
+
+注意：
+
+# variance 大
+
+该方向 perturbation 更自由。
+
+因此：
+
+* z
+* rx
+* ry
+
+允许更大 perturbation。
+
+因为：
+
+planar target 下：
+这些方向 observability 较弱。
+
+========================
+
+8. 最终 residual
+
+最终 residual：
+
+[
+reprojection residuals,
+prior residuals
+]
+
+统一返回：
+
+np.array(residuals)
+
+========================
+
+9. 保持 robust loss
+
+继续保留：
+
+least_squares(
+loss='huber'
+)
+
+或当前 robust loss 配置。
+
+========================
+
+10. 保持现有接口
+
+尽量保持：
+
+optimize()
+get_pose()
+等接口不变。
+
+========================
+
+11. 增加 diagnostics
+
+增加调试输出：
+
+* average reprojection error
+* average perturbation magnitude
+* per-axis perturbation statistics
+* condition number of JTJ
+* final perturbation norms
+
+========================
+
+12. 代码要求
+
+* 使用 scipy Rotation
+* 保持 numpy 风格
+* 注释清晰
+* 明确区分：
+
+  * nominal pose
+  * perturbation pose
+  * reprojection residual
+  * perturbation prior
+
+========================
+
+13. 最终目标
+
+得到一个：
+
+* shared static pose
+* per-frame slack variable
+* anisotropic perturbation prior
+* robust reprojection BA
+
+的稳定优化器。
+
+适用于：
+
+* planar target
+* weak z/rx/ry observability
+* timing mismatch
+* robot pose uncertainty
+* hand-eye residual
+* slow camera motion
+* multi-view optimization
