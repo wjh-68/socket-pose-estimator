@@ -22,6 +22,7 @@ For planar scenes (object on Z=0 plane, camera observing vertically):
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+from scipy.stats import chi2
 import cv2
 
 
@@ -65,7 +66,7 @@ class KalmanFilterPoseEstimator:
                  measurement_noise=2.0,
                  velocity_damping=0.98,
                  velocity_alpha=0.9,
-                 mahalanobis_threshold=9.21):  # chi2(0.01, 2 DOF)
+                 mahalanobis_confidence=0.99):  # confidence level for chi-squared threshold
         """
         Args:
             K: Camera intrinsic matrix (3x3)
@@ -75,7 +76,7 @@ class KalmanFilterPoseEstimator:
             measurement_noise: Base measurement noise (pixels)
             velocity_damping: Damping factor for velocity (0.95-0.99)
             velocity_alpha: Low-pass filter coefficient for velocity (0.8-0.95)
-            mahalanobis_threshold: Chi-squared threshold for innovation gating
+            mahalanobis_confidence: Confidence level for Mahalanobis gating (0.95-0.999)
         """
         self.K = np.array(K, dtype=np.float64)
         self.dist = np.array(dist, dtype=np.float64)
@@ -107,8 +108,8 @@ class KalmanFilterPoseEstimator:
         # Velocity low-pass filter coefficient
         self.velocity_alpha = velocity_alpha
 
-        # Mahalanobis gating threshold (chi-squared for 2 DOF, p=0.01)
-        self.mahalanobis_threshold = mahalanobis_threshold
+        # Mahalanobis gating confidence level
+        self.mahalanobis_confidence = mahalanobis_confidence
 
         # State initialized flag
         self.initialized = False
@@ -123,6 +124,13 @@ class KalmanFilterPoseEstimator:
 
         # Track update status
         self.last_update_success = False
+
+        # Store posterior pose for velocity estimation (task 3)
+        self.last_posterior_pose = None
+
+        # Predicted and posterior pose diagnostics (task 9)
+        self.predicted_pose_history = []
+        self.posterior_pose_history = []
 
     def initialize(self, rvec, tvec, timestamp=None):
         """
@@ -169,6 +177,10 @@ class KalmanFilterPoseEstimator:
         omega = self.state[6:9]   # angular velocity (rotation vector)
         v = self.state[9:12]      # translation velocity
 
+        # ========== Velocity damping (task 8: move before prediction) ==========
+        omega *= self.velocity_damping
+        v *= self.velocity_damping
+
         # ========== SO(3) rotation prediction ==========
         # R_pred = R @ Exp(omega * dt)
         R_current = Rotation.from_rotvec(rvec)
@@ -186,11 +198,8 @@ class KalmanFilterPoseEstimator:
         # Update state
         self.state[:3] = rvec_pred
         self.state[3:6] = tvec_pred
-        # state[6:9] and state[9:12] unchanged
-
-        # ========== Velocity damping ==========
-        self.state[6:9] *= self.velocity_damping
-        self.state[9:12] *= self.velocity_damping
+        self.state[6:9] = omega
+        self.state[9:12] = v
 
         # ========== Compute state transition Jacobian (F) ==========
         # For SO(3), the Jacobian is more complex, but we approximate
@@ -203,64 +212,96 @@ class KalmanFilterPoseEstimator:
         F[3:6, 9:12] = np.eye(3, dtype=np.float64) * dt
 
         # ========== Compute process noise covariance (Q) ==========
-        # Proper discretization for constant velocity model:
-        # Q = sigma_a^2 * [dt^4/4, dt^3/2; dt^3/2, dt^2] for each axis
-        # For simplicity, we separate position and velocity noise
+        # Improved discretization for constant velocity model (task 10)
+        # For each axis: Q_block = sigma_a^2 * [dt^4/4, dt^3/2; dt^3/2, dt^2]
+        # This gives proper continuous-time white noise acceleration discretization
 
         Q = np.zeros((self.state_dim, self.state_dim), dtype=np.float64)
 
-        # Rotation noise (for rotation vector)
-        # Using simplified: Q_rot = (dt^2) * sigma_rot^2
         dt2 = dt * dt
-        dt4 = dt2 * dt2
+        dt3 = dt2 * dt
+        dt4 = dt3 * dt
 
-        # Position/rotation uncertainty from velocity
-        Q[:3, :3] = np.diag(self.q_pos[3:] ** 2) * dt2      # rotation from omega noise
-        Q[3:6, 3:6] = np.diag(self.q_pos[:3] ** 2) * dt2    # translation from v noise
+        # For each spatial dimension (x, y, z for translation, rx, ry, rz for rotation)
+        for i in range(3):
+            # Translation blocks
+            sigma_a_trans = self.q_pos[i]  # translational acceleration noise
+            Q_block_trans = sigma_a_trans**2 * np.array([
+                [dt4/4, dt3/2],
+                [dt3/2, dt2]
+            ])
+            Q[3+i, 3+i] = Q_block_trans[0, 0]  # position variance
+            Q[3+i, 9+i] = Q_block_trans[0, 1]  # position-velocity correlation
+            Q[9+i, 3+i] = Q_block_trans[1, 0]  # velocity-position correlation
+            Q[9+i, 9+i] = Q_block_trans[1, 1]  # velocity variance
 
-        # Velocity random walk
-        Q[6:9, 6:9] = np.diag((self.q_vel[3:] ** 2) * dt)   # angular velocity random walk
-        Q[9:12, 9:12] = np.diag((self.q_vel[:3] ** 2) * dt)  # translation velocity random walk
+            # Rotation blocks
+            sigma_a_rot = self.q_pos[3+i]  # rotational acceleration noise
+            Q_block_rot = sigma_a_rot**2 * np.array([
+                [dt4/4, dt3/2],
+                [dt3/2, dt2]
+            ])
+            Q[i, i] = Q_block_rot[0, 0]      # rotation vector variance
+            Q[i, 6+i] = Q_block_rot[0, 1]    # rotation-omega correlation
+            Q[6+i, i] = Q_block_rot[1, 0]    # omega-rotation correlation
+            Q[6+i, 6+i] = Q_block_rot[1, 1]  # omega variance
 
-        # Cross-correlation (position affected by velocity noise)
-        # Simplified: small cross terms
-        Q[:3, 6:9] = np.diag(self.q_pos[3:] * self.q_vel[3:] * dt2 * 0.5)
-        Q[3:6, 9:12] = np.diag(self.q_pos[:3] * self.q_vel[:3] * dt2 * 0.5)
+        # ========== Fix Q asymmetry (task 4) - already symmetric by construction ==========
+        # Verify symmetry (should be exact due to construction)
+        assert np.allclose(Q, Q.T), "Process noise covariance Q must be symmetric"
 
         # Covariance prediction
         self.P = F @ self.P @ F.T + Q
 
     def compute_reprojection_jacobian(self, pts3d, rvec, tvec):
         """
-        Compute Jacobian of reprojection w.r.t. state (only pose params).
+        Compute Jacobian of reprojection w.r.t. pose params.
 
-        Returns:
-            J: Jacobian matrix (2N x 6) - only for pose params [rvec, tvec]
+        Uses OpenCV analytic Jacobian if available, otherwise numerical differentiation.
         """
+        pts3d = np.array(pts3d, dtype=np.float64)
+        rvec = np.array(rvec, dtype=np.float64).flatten()
+        tvec = np.array(tvec, dtype=np.float64).flatten()
+
         N = pts3d.shape[0]
         J = np.zeros((2 * N, 6), dtype=np.float64)
 
-        eps = 1e-6
-        for i in range(6):
-            state_plus = self.state.copy()
-            state_plus[i] += eps
-            rvec_p = state_plus[:3]
-            tvec_p = state_plus[3:6]
-            proj_p = self._project(pts3d, rvec_p, tvec_p)
+        # Try OpenCV analytic Jacobian first (task 5)
+        try:
+            # OpenCV jacobian is (N, 2, 12) where last dimension is [drvec, dtvec, dfx, dfy, dcx, dcy, dk1, dk2, dp1, dp2, dk3, dk4]
+            # We only need pose part: [:6] -> [drvec, dtvec]
+            jacobian = np.zeros((N, 2, 12), dtype=np.float64)
+            cv2.projectPoints(pts3d.reshape(-1, 1, 3), rvec, tvec, self.K, self.dist, jacobian=jacobian)
 
-            state_minus = self.state.copy()
-            state_minus[i] -= eps
-            rvec_m = state_minus[:3]
-            tvec_m = state_minus[3:6]
-            proj_m = self._project(pts3d, rvec_m, tvec_m)
+            # Extract pose Jacobian (rvec and tvec parts)
+            J[:, :3] = jacobian[:, :, :3].reshape(2 * N, 3)  # drvec
+            J[:, 3:6] = jacobian[:, :, 3:6].reshape(2 * N, 3)  # dtvec
+            return J
 
-            J[:, i] = ((proj_p - proj_m) / (2 * eps)).flatten()
+        except (TypeError, cv2.error, Exception) as e:
+            # Fallback to numerical differentiation
+            print(f"  [INFO] Using numerical differentiation for Jacobian: {e}")
+            eps = 1e-6
+            for i in range(6):
+                state_plus = np.concatenate([rvec, tvec]).copy()
+                state_plus[i] += eps
+                rvec_p = state_plus[:3]
+                tvec_p = state_plus[3:6]
+                proj_p = self._project(pts3d, rvec_p, tvec_p)
 
-        return J
+                state_minus = np.concatenate([rvec, tvec]).copy()
+                state_minus[i] -= eps
+                rvec_m = state_minus[:3]
+                tvec_m = state_minus[3:6]
+                proj_m = self._project(pts3d, rvec_m, tvec_m)
+
+                J[:, i] = ((proj_p - proj_m) / (2 * eps)).flatten()
+
+            return J
 
     def update(self, pts2d, pts3d, measurement_noise=None):
         """
-        Update step using 2D-3D correspondences.
+        Update step using 2D-3D correspondences with full EKF covariance update.
 
         Args:
             pts2d: Observed 2D points (Nx2)
@@ -289,25 +330,32 @@ class KalmanFilterPoseEstimator:
         innovation_norm = np.linalg.norm(innovation.reshape(-1, 2), axis=1)
         mean_error = np.mean(innovation_norm)
 
-        # Compute Jacobian
-        J = self.compute_reprojection_jacobian(pts3d, rvec, tvec)
+        # Compute measurement Jacobian H (2N x 12) - full state (task 1)
+        J_pose = self.compute_reprojection_jacobian(pts3d, rvec, tvec)
+        N = pts3d.shape[0]
+        H = np.zeros((2 * N, self.state_dim), dtype=np.float64)
+        H[:, :6] = J_pose  # pose Jacobian
+        # H[:, 6:] remains zero (no direct velocity measurement)
 
         # Measurement noise
-        N = pts2d.shape[0]
         r = measurement_noise if measurement_noise is not None else self.r_measurement
         R_noise = np.eye(2 * N, dtype=np.float64) * (r ** 2)
 
-        # ========== Mahalanobis gating ==========
-        # S = H @ P @ H^T + R
-        P_pose = self.P[:6, :6]
-        S = J @ P_pose @ J.T + R_noise
+        # ========== Innovation covariance S = H @ P @ H^T + R ==========
+        S = H @ self.P @ H.T + R_noise
 
+        # ========== Numerical stability (task 7) ==========
         try:
-            S_inv = np.linalg.inv(S)
+            # Try Cholesky decomposition for better numerical stability
+            from scipy.linalg import cho_factor, cho_solve
+            c, lower = cho_factor(S)
+            S_inv = cho_solve((c, lower), np.eye(S.shape[0]))
         except np.linalg.LinAlgError:
+            # Fallback to pseudo-inverse
             print("  [WARN] S matrix singular, using pseudo-inverse")
             S_inv = np.linalg.pinv(S)
 
+        # Mahalanobis distance
         mahal_sq = innovation @ S_inv @ innovation
         mahal_distance = np.sqrt(mahal_sq)
 
@@ -316,57 +364,74 @@ class KalmanFilterPoseEstimator:
 
         # Check condition number of JTJ for degeneracy detection
         try:
-            JTJ = J.T @ np.linalg.inv(R_noise) @ J
+            JTJ = J_pose.T @ np.linalg.inv(R_noise) @ J_pose
             cond = np.linalg.cond(JTJ)
             self.cond_history.append(cond)
         except:
             cond = 1e10
             self.cond_history.append(cond)
 
+        # ========== Mahalanobis threshold with correct DOF (task 6) ==========
+        dof = 2 * N  # measurement dimension
+        mahalanobis_threshold = chi2.ppf(self.mahalanobis_confidence, dof)
+
         # Innovation gating
-        if mahal_distance > self.mahalanobis_threshold:
-            print(f"  [WARN] Mahalanobis distance {mahal_distance:.2f} exceeds threshold {self.mahalanobis_threshold:.2f}")
+        if mahal_distance > mahalanobis_threshold:
+            print(f"  [WARN] Mahalanobis distance {mahal_distance:.2f} exceeds threshold {mahalanobis_threshold:.2f} (DOF={dof})")
             # Inflate measurement noise instead of rejecting
-            adapt_r = r * (mahal_distance / self.mahalanobis_threshold)
+            adapt_r = r * (mahal_distance / mahalanobis_threshold)
             R_noise = np.eye(2 * N, dtype=np.float64) * (adapt_r ** 2)
+            # Recalculate S with adapted noise
+            S = H @ self.P @ H.T + R_noise
+            try:
+                c, lower = cho_factor(S)
+                S_inv = cho_solve((c, lower), np.eye(S.shape[0]))
+            except np.linalg.LinAlgError:
+                S_inv = np.linalg.pinv(S)
 
-        # Kalman gain
-        S = J @ P_pose @ J.T + R_noise
-        K = P_pose @ J.T @ np.linalg.inv(S)
+        # ========== Kalman gain K = P @ H^T @ S^-1 ==========
+        K = self.P @ H.T @ S_inv
 
-        # State update (only pose part, NOT velocity)
+        # ========== State update (full state, task 1) ==========
         delta = K @ innovation
-        self.state[:3] += delta[:3]
-        self.state[3:6] += delta[3:6]
+        self.state += delta
 
-        # Covariance update using Joseph form for numerical stability
-        I_KH = np.eye(self.state_dim) - self._expand_K(K, J)
-        self.P = I_KH @ self.P @ I_KH.T + self._expand_K(K, R_noise, K.T)
+        # ========== SO(3) manifold correction (task 2) ==========
+        # Fix rotation update to be manifold-consistent
+        R_old = Rotation.from_rotvec(self.state[:3] - delta[:3])  # original rotation
+        R_delta = Rotation.from_rotvec(delta[:3])                # correction rotation
+        R_new = R_old * R_delta
+        self.state[:3] = R_new.as_rotvec()
+
+        # Translation update remains Euclidean (already handled by state += delta)
+
+        # ========== Full covariance update (Joseph form, task 1) ==========
+        I = np.eye(self.state_dim, dtype=np.float64)
+        I_KH = I - K @ H
+        self.P = I_KH @ self.P @ I_KH.T + K @ R_noise @ K.T
 
         self.last_update_success = True
         self.error_history.append(mean_error)
 
         return mean_error, mahal_distance, True
 
-    def _expand_K(self, K, M, KT=None):
-        """Expand Kalman gain for full state dimension."""
-        # K is (12 x 2N), M is (2N x 6) or (2N x 2N)
-        # Result should be (12 x 12)
-        result = np.zeros((self.state_dim, self.state_dim), dtype=np.float64)
-        result[:6, :6] = K @ M if KT is None else K @ M @ KT
-        return result
-
-    def update_velocity_from_deltas(self, prev_rvec, prev_tvec, curr_rvec, curr_tvec, dt):
+    def update_velocity_from_deltas(self, dt):
         """
-        Estimate velocity from pose deltas and apply low-pass filtering.
+        Estimate velocity from consecutive posterior poses (task 3).
 
         Args:
-            prev_rvec, prev_tvec: Previous pose
-            curr_rvec, curr_tvec: Current pose
             dt: Time delta
         """
-        if dt <= 0:
+        if dt <= 0 or self.last_posterior_pose is None:
             return
+
+        # Current posterior pose
+        curr_rvec = self.state[:3]
+        curr_tvec = self.state[3:6]
+
+        # Previous posterior pose
+        prev_rvec = self.last_posterior_pose[:3]
+        prev_tvec = self.last_posterior_pose[3:6]
 
         # Translation velocity
         v_measured = (curr_tvec - prev_tvec) / dt
@@ -393,7 +458,7 @@ class KalmanFilterPoseEstimator:
         3. Compute innovation
         4. Mahalanobis gating
         5. Update state and covariance
-        6. Estimate velocity from pose delta
+        6. Estimate velocity from consecutive posterior poses
 
         Args:
             pts2d: Observed 2D points (Nx2)
@@ -409,10 +474,6 @@ class KalmanFilterPoseEstimator:
         if pts2d.shape[0] < 4:
             return None, rvec_pnp, tvec_pnp, None, False
 
-        # Store previous state for velocity estimation
-        prev_rvec = self.state[:3].copy() if self.initialized else None
-        prev_tvec = self.state[3:6].copy() if self.initialized else None
-
         # Compute dt
         if self.initialized and self.last_update_time is not None and timestamp is not None:
             dt = (timestamp - self.last_update_time) / 1e9
@@ -425,6 +486,8 @@ class KalmanFilterPoseEstimator:
         # ========== Always predict first ==========
         if self.initialized:
             self.predict(dt)
+            # Store predicted pose for diagnostics (task 9)
+            self.predicted_pose_history.append(self.get_cMo().copy())
 
         # Determine inliers if not provided
         inlier_mask_use = inlier_mask
@@ -466,6 +529,8 @@ class KalmanFilterPoseEstimator:
             self.initialize(rvec, tvec, timestamp)
             cMo = self.get_cMo()
             self.pose_history.append(cMo.copy())
+            self.posterior_pose_history.append(cMo.copy())
+            self.last_posterior_pose = np.concatenate([self.state[:3], self.state[3:6]])
             return cMo, rvec, tvec, per_point_errors, True
 
         # ========== Update ==========
@@ -477,8 +542,11 @@ class KalmanFilterPoseEstimator:
             cMo = self.get_cMo()
             return cMo, rvec, tvec, per_point_errors, False
 
-        # ========== Estimate velocity from pose delta ==========
-        self.update_velocity_from_deltas(prev_rvec, prev_tvec, self.state[:3], self.state[3:6], dt)
+        # ========== Estimate velocity from consecutive posterior poses (task 3) ==========
+        self.update_velocity_from_deltas(dt)
+
+        # Update posterior pose for next velocity estimation
+        self.last_posterior_pose = np.concatenate([self.state[:3], self.state[3:6]])
 
         self.last_update_time = timestamp
         self.last_update_success = True
@@ -488,6 +556,7 @@ class KalmanFilterPoseEstimator:
 
         cMo = self.get_cMo()
         self.pose_history.append(cMo.copy())
+        self.posterior_pose_history.append(cMo.copy())  # task 9
 
         return cMo, rvec, tvec, per_point_errors, True
 
@@ -548,21 +617,13 @@ class KalmanFilterPoseEstimator:
         """Get history of poses."""
         return self.pose_history
 
-    def get_velocity_history(self):
-        """Get history of velocities."""
-        return self.velocity_history
+    def get_predicted_pose_history(self):
+        """Get history of predicted poses (task 9)."""
+        return self.predicted_pose_history
 
-    def get_error_history(self):
-        """Get history of reprojection errors."""
-        return self.error_history
-
-    def get_mahal_history(self):
-        """Get history of Mahalanobis distances."""
-        return self.mahal_history
-
-    def get_cond_history(self):
-        """Get history of condition numbers."""
-        return self.cond_history
+    def get_posterior_pose_history(self):
+        """Get history of posterior poses (task 9)."""
+        return self.posterior_pose_history
 
     def get_state(self):
         """Get current state vector."""
@@ -598,7 +659,7 @@ class RobustKalmanFilterPoseEstimator(KalmanFilterPoseEstimator):
                  measurement_noise=2.0,
                  velocity_damping=0.98,
                  velocity_alpha=0.9,
-                 mahalanobis_threshold=9.21):
+                 mahalanobis_confidence=0.99):
         """
         Args:
             process_noise: 6D [qx, qy, qz, qrx, qry, qrz]
@@ -606,10 +667,10 @@ class RobustKalmanFilterPoseEstimator(KalmanFilterPoseEstimator):
             measurement_noise: Base measurement noise (pixels)
             velocity_damping: Damping factor (0.95-0.99)
             velocity_alpha: Low-pass filter coefficient (0.8-0.95)
-            mahalanobis_threshold: Chi-squared threshold for gating
+            mahalanobis_confidence: Confidence level for Mahalanobis gating (0.95-0.999)
         """
         super().__init__(K, dist, process_noise, velocity_noise, measurement_noise,
-                         velocity_damping, velocity_alpha, mahalanobis_threshold)
+                         velocity_damping, velocity_alpha, mahalanobis_confidence)
 
 
 def pose_to_euler_tvec(pose, unit='deg'):
