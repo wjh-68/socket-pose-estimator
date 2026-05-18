@@ -62,6 +62,12 @@ class StaticPoseOptimizer:
         if point_sigmas is not None:
             self.set_point_sigmas(point_sigmas)
 
+        # Dynamic per-point uncertainty weighting parameters
+        # effective_sigma_i = base_sigma_i * (1.0 + alpha * clipped_error_i)
+        self.dynamic_alpha = 0.5  # how much error increases sigma (soft weighting)
+        self.max_dynamic_error = 3.0  # clip reprojection error to this value
+        self.gross_outlier_threshold = 20.0  # hard reject threshold (pixels)
+
     def set_extrinsics(self, eMc):
         self.eMc = np.array(eMc, dtype=np.float64)
 
@@ -104,7 +110,16 @@ class StaticPoseOptimizer:
         self._initial_pose = self._pose.copy()
         self._last_optimized_params = None
 
-    def add_frame(self, frame_index, robot_pose, pts2d, pts3d=None):
+    def add_frame(self, frame_index, robot_pose, pts2d, pts3d=None, per_point_errors_pnp=None):
+        """Add a frame for optimization.
+        
+        Args:
+            frame_index: unique frame identifier
+            robot_pose: 4x4 bMe matrix (base to end-effector)
+            pts2d: (N, 2) image points
+            pts3d: (N, 3) object points (default: uses obj_pts)
+            per_point_errors_pnp: (N,) per-point reprojection errors from PnP (for dynamic weighting)
+        """
         robot_pose = np.array(robot_pose, dtype=np.float64)
         pts2d = np.array(pts2d, dtype=np.float64)
 
@@ -115,11 +130,15 @@ class StaticPoseOptimizer:
         else:
             pts3d = np.array(pts3d, dtype=np.float64)
 
+        if per_point_errors_pnp is not None:
+            per_point_errors_pnp = np.array(per_point_errors_pnp, dtype=np.float64)
+
         frame = {
             'robot_pose': robot_pose,
             'pts2d': pts2d,
             'pts3d': pts3d,
-            'index': frame_index
+            'index': frame_index,
+            'per_point_errors_pnp': per_point_errors_pnp  # For dynamic weighting
         }
         self._frames.append(frame)
 
@@ -219,7 +238,8 @@ class StaticPoseOptimizer:
         optimizer = _StaticPoseOptimizerFunctor(
             self._frames, self.K, self.dist,
             self.eMc, self.prior_sigma, self.point_sigmas,
-            self.loss, self.loss_scale
+            self.loss, self.loss_scale,
+            self.dynamic_alpha, self.max_dynamic_error, self.gross_outlier_threshold
         )
 
         self._optimization_history = []
@@ -327,9 +347,9 @@ class StaticPoseOptimizer:
 
         initial = self._optimization_history[0]
         final = self._optimization_history[-1]
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 80)
         print("Optimization Summary")
-        print("=" * 60)
+        print("=" * 80)
         print(f"Initial avg error: {initial['avg_error']:.4f} px")
         print(f"Final avg error:   {final['avg_error']:.4f} px")
         print(f"Error reduction:  {(1 - final['avg_error'] / initial['avg_error']) * 100:.1f}%")
@@ -344,13 +364,19 @@ class StaticPoseOptimizer:
                 print(f"Unweighted reprojection RMS: {self._diagnostics['unweighted_reproj_rms']:.4f} px")
             
             if 'point_sigmas' in self._diagnostics:
-                print(f"\nPoint Sigma Configuration (per-point reprojection uncertainty):")
+                print(f"\n--- Base Point Sigma Configuration ---")
                 print(f"  Mean sigma:   {self._diagnostics['avg_point_sigma']:.4f} px")
                 print(f"  Min sigma:    {self._diagnostics['min_point_sigma']:.4f} px")
                 print(f"  Max sigma:    {self._diagnostics['max_point_sigma']:.4f} px")
                 sigmas = self._diagnostics['point_sigmas']
                 for i, sigma in enumerate(sigmas):
-                    print(f"  Point {i}: sigma={sigma:.4f} px")
+                    print(f"  Point {i}: base_sigma={sigma:.4f} px")
+            
+            if 'dynamic_alpha' in self._diagnostics:
+                print(f"\n--- Dynamic Weight Configuration ---")
+                print(f"  Alpha (error scaling):       {self._diagnostics['dynamic_alpha']:.4f}")
+                print(f"  Max dynamic error (clip):    {self._diagnostics['max_dynamic_error']:.4f} px")
+                print(f"  Gross outlier threshold:     {self._diagnostics['gross_outlier_threshold']:.4f} px")
 
         if self._frame_results:
             print("\n--- Per-Frame Results ---")
@@ -362,7 +388,7 @@ class StaticPoseOptimizer:
             total_error = sum(fr['total_error'] for fr in self._frame_results)
             total_pts = sum(fr['n_points'] for fr in self._frame_results)
             print(f"{'Total':>6} {total_pts:>6} {total_error/total_pts:>8.3f}")
-        print("\n" + "=" * 60)
+        print("=" * 80)
 
     def export_to_dict(self):
         if not self._optimization_history:
@@ -516,16 +542,31 @@ class StaticPoseOptimizer:
             self._diagnostics['avg_point_sigma'] = float(np.mean(self.point_sigmas))
             self._diagnostics['min_point_sigma'] = float(np.min(self.point_sigmas))
             self._diagnostics['max_point_sigma'] = float(np.max(self.point_sigmas))
+        
+        # Record dynamic weighting configuration
+        self._diagnostics['dynamic_alpha'] = self.dynamic_alpha
+        self._diagnostics['max_dynamic_error'] = self.max_dynamic_error
+        self._diagnostics['gross_outlier_threshold'] = self.gross_outlier_threshold
 
 
 class _StaticPoseOptimizerFunctor:
-    def __init__(self, frames, K, dist, eMc, prior_sigma, point_sigmas, loss, loss_scale):
+    def __init__(self, frames, K, dist, eMc, prior_sigma, point_sigmas, 
+                 loss, loss_scale, dynamic_alpha, max_dynamic_error, gross_outlier_threshold):
         self.frames = frames
         self.eMc = np.array(eMc, dtype=np.float64)
         self.prior_sigma = np.array(prior_sigma, dtype=np.float64)
-        self.point_sigmas = point_sigmas  # shape (N,), per-point uncertainty
+        self.point_sigmas = point_sigmas  # shape (N,), per-point base uncertainty (pixels)
         self.loss = loss
         self.loss_scale = loss_scale
+        
+        # Dynamic weighting parameters
+        self.dynamic_alpha = dynamic_alpha  # 0.5: scale factor for error-based weighting
+        self.max_dynamic_error = max_dynamic_error  # 3.0: clip error to this value
+        self.gross_outlier_threshold = gross_outlier_threshold  # 20.0: hard reject threshold
+        
+        # Runtime diagnostics
+        self.gross_outlier_count = 0
+        self.dynamic_factors = []  # List of (frame_idx, point_idx, factor) tuples
 
         self.fx = K[0, 0]
         self.fy = K[1, 1]
@@ -536,6 +577,8 @@ class _StaticPoseOptimizerFunctor:
     def __call__(self, params):
         bMo = StaticPoseOptimizer._params_to_pose(params[:6])
         residuals = []
+        self.gross_outlier_count = 0
+        self.dynamic_factors = []
 
         for frame_index, frame in enumerate(self.frames):
             bMe = frame['robot_pose']
@@ -550,15 +593,36 @@ class _StaticPoseOptimizerFunctor:
             # Compute reprojection error
             err = proj - frame['pts2d']  # shape (N, 2)
             
-            # Apply per-point whitening: divide by point sigma
-            # point_sigmas shape: (N,), err shape: (N, 2)
-            if self.point_sigmas is not None:
-                if len(frame['pts3d']) != len(self.point_sigmas):
+            # Get per-point PnP errors from frame data (for dynamic weighting)
+            per_point_errors_pnp = frame.get('per_point_errors_pnp')
+            
+            # Compute effective sigma with dynamic weighting
+            effective_sigmas = self.point_sigmas.copy() if self.point_sigmas is not None else np.ones(len(frame['pts3d']))
+            
+            if per_point_errors_pnp is not None:
+                # Dynamic weighting: effective_sigma_i = base_sigma_i * (1.0 + alpha * clipped_error_i)
+                for i, pnp_error in enumerate(per_point_errors_pnp):
+                    # Hard reject: gross outliers (> threshold)
+                    if pnp_error > self.gross_outlier_threshold:
+                        self.gross_outlier_count += 1
+                        # Mark this point as invalid by setting very high sigma (nearly zero weight)
+                        effective_sigmas[i] = 1e6  # Very high sigma = very low weight
+                    else:
+                        # Soft weighting: increase sigma based on error
+                        clipped_error = np.clip(pnp_error, 0, self.max_dynamic_error)
+                        dynamic_factor = 1.0 + self.dynamic_alpha * clipped_error
+                        effective_sigmas[i] = self.point_sigmas[i] * dynamic_factor
+                        self.dynamic_factors.append((frame_index, i, float(dynamic_factor)))
+            
+            # Apply per-point whitening with effective sigma
+            # err shape: (N, 2), effective_sigmas shape: (N,)
+            if effective_sigmas is not None:
+                if len(frame['pts3d']) != len(effective_sigmas):
                     raise ValueError(
-                        f"point_sigmas length {len(self.point_sigmas)} does not match "
+                        f"effective_sigmas length {len(effective_sigmas)} does not match "
                         f"frame pts3d length {len(frame['pts3d'])}"
                     )
-                whitened_err = err / self.point_sigmas[:, np.newaxis]
+                whitened_err = err / effective_sigmas[:, np.newaxis]
             else:
                 whitened_err = err
             

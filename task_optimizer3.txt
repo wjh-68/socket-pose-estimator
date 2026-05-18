@@ -1,0 +1,215 @@
+请基于当前版本的 chargeport pose estimator_ba 和 StaticPoseOptimizer_ba 增加：
+
+“dynamic per-point uncertainty weighting”
+
+目标：
+
+当前系统已经支持：
+
+* per-point base sigma
+* weighted reprojection residual
+* perturbation prior
+* static pose bundle adjustment
+
+现在希望：
+
+进一步利用：
+
+PnP阶段得到的：
+
+per_point_errors_pnp
+
+作为：
+
+“动态 measurement confidence”
+
+用于：
+
+动态调整每个点的 reprojection residual 权重。
+
+========================
+核心思想
+====
+
+不要：
+
+直接使用 hard inlier/outlier reject。
+
+而是：
+
+使用：
+
+soft uncertainty scaling。
+
+即：
+
+最终：
+
+effective_sigma_i =
+base_sigma_i * dynamic_factor_i
+
+其中：
+
+* base_sigma_i：
+  静态孔位 uncertainty
+  （由孔大小手工配置）
+
+* dynamic_factor_i：
+  根据当前帧 PnP reprojection error 动态调整。
+
+========================
+重要要求
+====
+
+1. 不要直接：
+
+sigma_i = reprojection_error_i
+
+这是危险的。
+
+因为：
+
+PnP residual 本身受当前 pose 影响，
+会形成 feedback loop。
+
+========================
+
+2. 使用 soft weighting
+
+推荐：
+
+dynamic_factor =
+1.0 + alpha * clipped_error
+
+其中：
+
+clipped_error =
+clip(error_i, 0, max_dynamic_error)
+
+推荐：
+
+alpha = 0.5
+
+max_dynamic_error = 3.0
+
+========================
+
+3. 最终 sigma
+
+effective_sigma =
+base_sigma * dynamic_factor
+
+========================
+
+4. reprojection residual whitening
+
+当前：
+
+err = proj - pts2d
+
+改成：
+
+err[:,0] /= effective_sigma
+err[:,1] /= effective_sigma
+
+即：
+
+u/v 使用相同 sigma。
+
+默认：
+
+每点 covariance：
+
+Σ_i = sigma_i² * I
+
+========================
+
+5. hard reject 仅用于 gross outlier
+
+如果：
+
+error_i > gross_outlier_threshold
+
+例如：
+
+20 px
+
+则：
+
+直接剔除该点。
+
+但：
+
+普通 residual 大小：
+
+不要 binary reject。
+
+========================
+
+6. optimizer 输入
+
+每帧增加：
+
+frame['per_point_errors_pnp']
+
+来自：
+
+PnP 阶段计算。
+
+========================
+
+7. 增加默认参数
+
+self.dynamic_alpha = 0.5
+
+self.max_dynamic_error = 3.0
+
+self.gross_outlier_threshold = 20.0
+
+========================
+
+8. 增加调试输出
+
+输出：
+
+* base sigma
+* dynamic factor
+* effective sigma
+* weighted reprojection RMS
+* gross outlier count
+
+========================
+
+9. 保持以下逻辑不变
+
+不要破坏：
+
+* global bMo optimization
+* per-frame perturbation
+* anisotropic perturbation prior
+* robust loss
+* SE(3) perturbation
+
+========================
+
+10. 最终目标
+
+得到：
+
+“uncertainty-aware weighted bundle adjustment”
+
+其中：
+
+* 小孔天然低权重
+* 当前帧几何不一致的点进一步降权
+* gross outlier 被剔除
+* 所有 weighting 都是 soft probabilistic 的
+
+从而：
+
+提高：
+
+* z stability
+* rx/ry stability
+* planar scene robustness
+* timing mismatch robustness

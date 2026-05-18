@@ -316,7 +316,8 @@ if __name__ == '__main__':
             if optimizer.get_frame_count() >= SLIDING_WINDOW_SIZE:
                 optimizer.remove_oldest_frame()
 
-            optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d)
+            # Add frame with per_point_errors_pnp for dynamic weighting in optimizer
+            optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp=per_point_errors_pnp)
             result_optimized = optimizer.optimize()
 
             bMo_optimized = optimizer.get_pose()
