@@ -424,11 +424,15 @@ if __name__ == '__main__':
                         color = (0, 255, 0) if inlier_mask[i] else (0, 0, 255)
                     else:
                         color = (255, 255, 0)
-                    cv2.circle(img, (int(x), int(y)), 2, color, -1)
+                    # Detected point: hollow circle with edge (green=inlier, red=outlier, yellow=unknown)
+                    cv2.circle(img, (int(x), int(y)), 3, color, 1)
                     x_proj, y_proj = proj[i][0]
-                    cv2.circle(img, (int(x_proj), int(y_proj)), 3, (255, 0, 0), -1)
+                    # Projected point: cross marker (blue)
+                    cv2.drawMarker(img, (int(x_proj), int(y_proj)), (255, 0, 0), cv2.MARKER_CROSS, 5, 1)
+                    # Connection line
                     cv2.line(img, (int(x), int(y)), (int(x_proj), int(y_proj)), (0, 255, 0), 1)
-                    cv2.putText(img, str(i), (int(x)+5, int(y)-5),
+                    # Point index label
+                    cv2.putText(img, str(i), (int(x)-8, int(y)-8),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
             vis_result = img[roi_y_min:roi_y_max, roi_x_min:roi_x_max]
