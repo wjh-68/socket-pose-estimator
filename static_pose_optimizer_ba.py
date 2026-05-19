@@ -64,7 +64,7 @@ class StaticPoseOptimizer:
 
         # Dynamic per-point uncertainty weighting parameters
         # effective_sigma_i = base_sigma_i * (1.0 + alpha * clipped_error_i)
-        self.dynamic_alpha = 0.5  # how much error increases sigma (soft weighting)
+        self.dynamic_alpha = 0.2  # how much error increases sigma (soft weighting)
         self.max_dynamic_error = 3.0  # clip reprojection error to this value
         self.gross_outlier_threshold = 20.0  # hard reject threshold (pixels)
 

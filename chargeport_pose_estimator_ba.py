@@ -12,8 +12,10 @@ from static_pose_optimizer_ba import StaticPoseOptimizer, pose_to_euler_tvec
 model = YOLO("checkpoint/best.pt")  # load an official model
 
 # ============ Config ============
-DATA_DIR = "dataset/save_data3/20260511_120244"
-RESULT_DIR = "result/save_data3/20260511_120244/pose_estimation_ba"
+# DATA_DIR = "dataset/save_data3/20260511_120244"
+# RESULT_DIR = "result/save_data3/20260511_120244/pose_estimation_ba"
+DATA_DIR = "dataset/save_data3/20260511_120538"
+RESULT_DIR = "result/save_data3/20260511_120538/pose_estimation_ba"
 SLIDING_WINDOW_SIZE = 8
 MAX_FRAMES = -1  # Limit frames for quick test, -1 for all frames
 
@@ -66,8 +68,8 @@ PRIOR_SIGMA = np.array([
 ], dtype=np.float64)
 
 POINT_SIGMAS = np.array([
-    2.0,  # top-left small hole
-    2.0,  # top-right small hole
+    1.5,  # top-left small hole
+    1.5,  # top-right small hole
     1.0,  # mid-left large hole
     1.0,  # center large hole
     1.0,  # mid-right large hole
