@@ -1425,6 +1425,8 @@ class UltimateSocketMatcher:
                     # if score == 7: return proj, 7
         
 
+        if best_H is None:
+            return None, 0,None
         # 2. 构建距离矩阵 (N_template x M_candidates)
         # 计算每一对点之间的欧氏距离
         diff = final_res[:, np.newaxis, :] - centers[np.newaxis, :, :]
