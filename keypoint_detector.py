@@ -704,21 +704,27 @@ class KeypointDetector:
     # 批处理方法
     # ==========================================================================
 
-    def batch_process_to_base(self, img_dir, save_dir=None, coplanar=False):
+    def batch_process_to_base(self, data_dir, save_dir=None, coplanar=False):
         """
-        遍历图像文件夹及同名 .npy 文件，计算物体在基坐标系下的位姿。
+        遍历数据文件夹，计算物体在基坐标系下的位姿。
+
+        数据文件夹结构:
+        data_dir/
+        ├── images
+        │   └── frame_01.jpg
+        │   └── frame_02.jpg
+        └── metadata.json    包含每张图像对应的机械臂末端→基座变换矩阵 M_end2base
 
         流程:
-            1. 读取每张图像及同名 .npy 文件（末端→基座变换矩阵 M_end2base）
+            1. 读取每张图像和对应的机械臂位姿（末端→基座变换矩阵 M_end2base）
             2. 调用 process_frame 计算相机坐标系下的 PnP 位姿
             3. 通过链式变换 T_obj2base = M_end2base @ M_cam2end @ T_obj2cam 得到基坐标系位姿
             4. 计算相邻帧间的旋转/平移误差（衡量位姿一致性）
             5. 保存位姿结果 (base_poses.json) 和误差结果 (base_errors.json)
 
         参数:
-            img_dir: str, 图像目录路径。目录中每张图像需有同名 .npy 文件，
-                     存放 4x4 末端→基座变换矩阵 M_end2base
-            save_dir: str, 结果保存目录，默认为 img_dir/base_output
+            data_dir: str, 数据目录路径。目录中应包含 images 子目录和 metadata.json 文件
+            save_dir: str, 结果保存目录，默认为 data_dir/base_output
             coplanar: bool, 是否使用共面 PnP 求解，默认 False
 
         返回:
@@ -728,31 +734,55 @@ class KeypointDetector:
         M_cam2end = self.M_cam2end
 
         if save_dir is None:
-            save_dir = os.path.join(img_dir, 'base_output')
+            save_dir = os.path.join(data_dir, 'base_output')
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        img_files = sorted([f for f in os.listdir(img_dir)
-                            if f.lower().endswith(('.jpg', '.png', '.bmp'))])
-        print(f"共 {len(img_files)} 张图像")
+        meta_path = os.path.join(data_dir, "metadata.json")
+        with open(meta_path, 'r') as f:
+            metadata = json.load(f)
 
+        records = metadata['records']
+        print(f"Loaded {len(records)} frames from {meta_path}")
+
+        processed_frames = 0
+        last_timestamp_ns = None
         all_results = {}
+        
+        # =========== Read metadata config ===========
+        BEGIN_FRAME_ID = 1180  # Skip frames with frame_id < this value
+        PROCESSED_INTERVAL = 0.1
+        MAX_FRAMES = -1  # Limit frames for quick test, -1 for all frames
 
-        for cnt, fname in enumerate(img_files):
-            img_path = os.path.join(img_dir, fname)
-            npy_path = os.path.join(img_dir, os.path.splitext(fname)[0] + '.npy')
+        for record in records:
+            frame_id_val = record['frame_id']
+            if frame_id_val < BEGIN_FRAME_ID:
+                continue
+            time_diff = record['time_diff_ns']/1e9
+            if time_diff > 0.05:
+                continue
+            if MAX_FRAMES > 0 and processed_frames >= MAX_FRAMES:
+                print(f"\nReached max frames limit ({MAX_FRAMES}), stopping...")
+                break
+            processed_frames += 1
+
+            current_timestamp_ns = record['camera_timestamp_ns']
+            if last_timestamp_ns is not None:
+                time_diff_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
+                if time_diff_s < PROCESSED_INTERVAL:
+                    continue
+            last_timestamp_ns = record['camera_timestamp_ns']
+
+            img_relative_path = record['image_path']
+            img_path = os.path.join(data_dir, img_relative_path)
+            M_end2base = np.array(record['pose_matrix_4x4']).reshape(4, 4)
+
+            print("\n==============================================")
+            print(f"Processing frame {processed_frames}: frame_{frame_id_val:06d}.jpg")
 
             frame = cv2.imread(img_path)
             if frame is None:
-                print(f"  [{cnt+1}] 跳过无法读取: {fname}")
-                continue
-
-            if not os.path.exists(npy_path):
-                print(f"  [{cnt+1}] {fname}: 未找到 .npy，跳过")
-                continue
-            M_end2base = np.load(npy_path)
-            if M_end2base.shape != (4, 4):
-                print(f"  [{cnt+1}] {fname}: .npy 不是 4x4，跳过")
+                print(f"Failed to read image: {img_path}")
                 continue
 
             t0 = time.perf_counter()
@@ -761,11 +791,11 @@ class KeypointDetector:
 
             if self.visual:
                 vis_img = self.get_annotated_frame()
-                cv2.imwrite(os.path.join(save_dir, fname), vis_img)
+                cv2.imwrite(os.path.join(save_dir, img_relative_path), vis_img)
 
             if pnp_result is None:
-                print(f"  [{cnt+1}] {fname}: PnP 失败, {elapsed:.0f}ms")
-                all_results[fname] = None
+                print(f"  [{processed_frames}] {img_relative_path}: PnP 失败, {elapsed:.0f}ms")
+                all_results[img_relative_path] = None
                 continue
 
             # T_obj2cam
@@ -781,7 +811,7 @@ class KeypointDetector:
             t_base = T_obj2base[:3, 3]
             rvec_base, _ = cv2.Rodrigues(R_base)
 
-            all_results[fname] = {
+            all_results[img_relative_path] = {
                 'rvec': pnp_result['rvec'].flatten().tolist(),
                 'tvec': pnp_result['tvec'].flatten().tolist(),
                 'reproj_error': float(pnp_result['reproj_error']),
@@ -789,7 +819,7 @@ class KeypointDetector:
                 'T_obj2base': T_obj2base.tolist(),
             }
 
-            print(f"  [{cnt+1}] {fname}: reproj={pnp_result['reproj_error']:.2f}px, "
+            print(f"  [{processed_frames}] {img_relative_path}: reproj={pnp_result['reproj_error']:.2f}px, "
                   f"t_base=[{t_base[0]:.1f},{t_base[1]:.1f},{t_base[2]:.1f}], {elapsed:.0f}ms")
 
         # 保存位姿
@@ -1634,46 +1664,53 @@ if __name__ == "__main__":
         visual=True,            # 可视化
     )
 
-    # --- 单帧处理 ---
-    img_path = "dataset/save_data3/20260511_120244/images/frame_004995.jpg"
-    frame = cv2.imread(img_path)
-    # 慢充口：coplanar=True, 快充口 coplanar=False
-    pnp_result = detector.process_frame(frame, coplanar=True)
+    # # --- 单帧处理 ---
+    # img_path = "dataset/save_data3/20260511_120244/images/frame_004995.jpg"
+    # frame = cv2.imread(img_path)
+    # # 慢充口：coplanar=True, 快充口 coplanar=False
+    # pnp_result = detector.process_frame(frame, coplanar=True)
 
-    concentric_results = detector._concentric_results
+    # concentric_results = detector._concentric_results
+    # # for kp_idx in sorted(concentric_results.keys()):
+    # #     cc = concentric_results[kp_idx]['concentric_center']
+    # #     if cc is not None:
+    # #         print(f"关键点 {kp_idx}: 圆心 ({cc[0]:.4f}, {cc[1]:.4f})")
+    # #     else:
+    # #         print(f"关键点 {kp_idx}: 未匹配到圆心")
+
+    # cc_points = [] #获取到圆心坐标
+    # cc_indices = [] #获取到圆心对应的关键点索引
     # for kp_idx in sorted(concentric_results.keys()):
     #     cc = concentric_results[kp_idx]['concentric_center']
     #     if cc is not None:
-    #         print(f"关键点 {kp_idx}: 圆心 ({cc[0]:.4f}, {cc[1]:.4f})")
-    #     else:
-    #         print(f"关键点 {kp_idx}: 未匹配到圆心")
+    #         cc_points.append(cc)
+    #         cc_indices.append(kp_idx)
+    # cc_points = np.array(cc_points)
 
-    cc_points = [] #获取到圆心坐标
-    cc_indices = [] #获取到圆心对应的关键点索引
-    for kp_idx in sorted(concentric_results.keys()):
-        cc = concentric_results[kp_idx]['concentric_center']
-        if cc is not None:
-            cc_points.append(cc)
-            cc_indices.append(kp_idx)
-    cc_points = np.array(cc_points)
-
-    rvec = pnp_result['rvec']
-    tvec = pnp_result['tvec']
-    R,_ = cv2.Rodrigues(rvec)
-    t = tvec.flatten()
-    T_obj2cam = np.eye(4)
-    T_obj2cam[:3, :3] = R
-    T_obj2cam[:3, 3] = t
-    print("T_obj2cam:", T_obj2cam)
+    # rvec = pnp_result['rvec']
+    # tvec = pnp_result['tvec']
+    # R,_ = cv2.Rodrigues(rvec)
+    # t = tvec.flatten()
+    # T_obj2cam = np.eye(4)
+    # T_obj2cam[:3, :3] = R
+    # T_obj2cam[:3, 3] = t
+    # print("T_obj2cam:", T_obj2cam)
 
 
-    vis_img = detector.get_annotated_frame()
-    cv2.imshow("result", vis_img)
-    cv2.waitKey(0)
-    cv2.imwrite("result.jpg",vis_img)
-    # --- 批量处理到基坐标系 ---
-    # detector.batch_process_to_base(
+    # vis_img = detector.get_annotated_frame()
+    # cv2.imshow("result", vis_img)
+    # cv2.waitKey(0)
+    # cv2.imwrite("result.jpg",vis_img)
+
+    # --- 批量检测圆心并保存 ---
+    # detector.batch_detect_and_save(
     #     img_dir="dataset/save_data3/20260511_120244/images",
     #     save_dir="result/save_data3/20260511_120244/cdd",
-    #     coplanar=True,
     # )
+
+    # --- 批量处理到基坐标系 ---
+    detector.batch_process_to_base(
+        data_dir="dataset/save_data3/20260511_120244",
+        save_dir="result/save_data3/20260511_120244/cdd",
+        coplanar=True,
+    )
