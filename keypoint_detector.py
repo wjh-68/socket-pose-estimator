@@ -6,12 +6,13 @@ import time
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
-try:
-    os.add_dll_directory(r'D:\SDK\opencv4.7.0_Library\x64\vc17\bin')
-    import pycylinderedsf as pyced
-    HAS_PYCED = True
-except (ImportError, OSError):
-    HAS_PYCED = False
+# try:
+#     os.add_dll_directory(r'D:\SDK\opencv4.7.0_Library\x64\vc17\bin')
+#     import pycylinderedsf as pyced
+#     HAS_PYCED = True
+# except (ImportError, OSError):
+#     HAS_PYCED = False
+HAS_PYCED = False
 
 # ==============================================================================
 # 3D 物体坐标模板 (单位: mm)
@@ -1634,7 +1635,7 @@ if __name__ == "__main__":
     )
 
     # --- 单帧处理 ---
-    img_path = "./2026-05-11_10_47_33_027.png"
+    img_path = "dataset/save_data3/20260511_120244/images/frame_004995.jpg"
     frame = cv2.imread(img_path)
     # 慢充口：coplanar=True, 快充口 coplanar=False
     pnp_result = detector.process_frame(frame, coplanar=True)
@@ -1672,7 +1673,7 @@ if __name__ == "__main__":
     cv2.imwrite("result.jpg",vis_img)
     # --- 批量处理到基坐标系 ---
     # detector.batch_process_to_base(
-    #     img_dir="D:/Data/manchong/save_data5",
-    #     save_dir="D:/Vscode/code/result_data5",
+    #     img_dir="dataset/save_data3/20260511_120244/images",
+    #     save_dir="result/save_data3/20260511_120244/cdd",
     #     coplanar=True,
     # )
