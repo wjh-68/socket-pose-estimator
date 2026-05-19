@@ -76,7 +76,7 @@ def read_camera():
                 latest_frame = frame.copy()
                 latest_frame_ts = time.perf_counter_ns()
         
-        time.sleep(0.02)  # 50Hz 采样
+        time.sleep(0.05)  # 20Hz 采样
 
     cap.release()
 
@@ -97,7 +97,7 @@ def read_robot():
             print(f"[Robot] read error: {e}")
             time.sleep(0.01)
             continue
-        time.sleep(0.005)  # 200Hz 采样
+        time.sleep(0.02)  # 50Hz 采样
 
 def get_synced_pair():
     """返回 (frame, pose, frame_ts_ns, pose_ts_ns, time_diff_ns) 五元组，
