@@ -458,7 +458,8 @@ if __name__ == '__main__':
                     cv2.putText(img, str(i), (int(x)-8, int(y)-8),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
-            vis_result = img[roi_y_min:roi_y_max, roi_x_min:roi_x_max]
+            pad = 50
+            vis_result = img[roi_y_min-pad:roi_y_max+pad, roi_x_min-pad:roi_x_max+pad]
             vis_result = cv2.resize(vis_result, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
             vis_result_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_vis_result.png")
             cv2.imwrite(vis_result_path, vis_result)
