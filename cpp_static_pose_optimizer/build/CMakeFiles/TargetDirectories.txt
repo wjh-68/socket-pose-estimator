@@ -1,3 +1,0 @@
-/home/byd/work/socket-pose-estimator/cpp_static_pose_optimizer/build/CMakeFiles/static_pose_optimizer_example.dir
-/home/byd/work/socket-pose-estimator/cpp_static_pose_optimizer/build/CMakeFiles/edit_cache.dir
-/home/byd/work/socket-pose-estimator/cpp_static_pose_optimizer/build/CMakeFiles/rebuild_cache.dir
