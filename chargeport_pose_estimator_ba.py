@@ -12,10 +12,12 @@ from static_pose_optimizer_ba import StaticPoseOptimizer, pose_to_euler_tvec
 model = YOLO("checkpoint/best.pt")  # load an official model
 
 # ============ Config ============
-# DATA_DIR = "dataset/save_data3/20260511_120244"
-# RESULT_DIR = "result/save_data3/20260511_120244/pose_estimation_ba"
-DATA_DIR = "dataset/save_data3/20260511_120538"
-RESULT_DIR = "result/save_data3/20260511_120538/pose_estimation_ba"
+DATA_DIR = "dataset/save_data3/20260511_120244"
+RESULT_DIR = "result/save_data3/20260511_120244/pose_estimation_ba"
+SAVE_DIR = "dataset/save_data3/chb_20260511_120244"
+# DATA_DIR = "dataset/save_data3/20260511_120538"
+# RESULT_DIR = "result/save_data3/20260511_120538/pose_estimation_ba"
+# SAVE_DIR = "dataset/save_data3/chb_20260511_120538"
 SLIDING_WINDOW_SIZE = 8
 MAX_FRAMES = -1  # Limit frames for quick test, -1 for all frames
 
@@ -317,6 +319,24 @@ if __name__ == '__main__':
 
             if optimizer.get_frame_count() >= SLIDING_WINDOW_SIZE:
                 optimizer.remove_oldest_frame()
+
+            # # save dataset for chb
+            # # centers
+            # coords = []
+            # for cc in pts2d:
+            #     if cc is not None:
+            #         coords.append(f"{cc[0]:.4f} {cc[1]:.4f}")
+            #     else:
+            #         coords.append("-1 -1")
+            # txt_path = os.path.join(SAVE_DIR, 'data', f"{frame_id_val}.txt")
+            # with open(txt_path, 'w') as f:
+            #     f.write(' '.join(coords))
+            # # robot poses
+            # save_pose_path = os.path.join(SAVE_DIR, 'data', f"{frame_id_val}.npy")
+            # np.save(save_pose_path, robot_pose)
+            # # images
+            # save_img_path = os.path.join(SAVE_DIR, 'image', f"{frame_id_val}.png")
+            # cv2.imwrite(save_img_path, img)
 
             # Add frame with per_point_errors_pnp for dynamic weighting in optimizer
             optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp=per_point_errors_pnp)
