@@ -26,17 +26,23 @@ frame_records = []  # 每帧的中间数据和结果列表
 pnp_records = []   # PnP结果列表
 optimize_records = []  # 优化结果列表
 
+cnt_no_detection = 0    # 模型检测 roi 失败次数
+cnt_rejected_frames = 0 # 因与pnp结果差距大,拒绝加入 optimizer的帧数
+cnt_less_7pts = 0       # 检测到的圆心数<7
+cnt_pnp_failed = 0      # two round pnp failed
+
 
 # =========== Read metadata config ===========
 BEGIN_FRAME_ID = 1180  # Skip frames with frame_id < this value
-PROCESSED_INTERVAL = 0.1
-# PnP threshold config
-USE_ADAPTIVE_THRESHOLD = True  # True = adaptive, False = fixed
-FIXED_ERROR_THRESHOLD = 0.4    # used when USE_ADAPTIVE_THRESHOLD = False
+PROCESSED_INTERVAL = 0.03
+# =========== PnP threshold config ===========
+USE_ADAPTIVE_THRESHOLD = True  # True = adaptive (but <= fixed), False = fixed
+FIXED_ERROR_THRESHOLD = 1.0    
 ADAPTIVE_MULTIPLIER = 2.0      # threshold = median_error * multiplier
 
-# Frame rejection threshold - if ALL points have error > this, skip
-FRAME_REJECT_THRESHOLD = 2.0   # pixels
+# Frame rejection threshold - if pose diff (PnP - Optimized) exceed threshold, skip
+MAX_TRANSLATION = 20    # mm
+MAX_ROTATION_DEG = 20
 
 # Camera on robot end-effector (eye-to-hand extrinsic)
 eMc = np.array([
@@ -128,17 +134,17 @@ def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=0.4):
     if USE_ADAPTIVE_THRESHOLD:
         median_error = np.median(per_point_errors)
         current_threshold = median_error * ADAPTIVE_MULTIPLIER
-        current_threshold = max(current_threshold, FIXED_ERROR_THRESHOLD)
+        current_threshold = min(current_threshold, FIXED_ERROR_THRESHOLD)
     else:
         current_threshold = FIXED_ERROR_THRESHOLD
 
     inlier_mask = per_point_errors < current_threshold
     n_inliers = inlier_mask.sum()
 
-    if n_inliers < 4:
-        current_threshold = current_threshold * 2
-        inlier_mask = per_point_errors < current_threshold
-        n_inliers = inlier_mask.sum()
+    # if n_inliers < 4:
+    #     current_threshold = current_threshold * 2
+    #     inlier_mask = per_point_errors < current_threshold
+    #     n_inliers = inlier_mask.sum()
 
     if n_inliers >= 4:
         pts3d_inlier = pts3d[inlier_mask]
@@ -237,6 +243,7 @@ if __name__ == '__main__':
         result = getInferResult(model, img_bright)
         if result.shape[0] == 0 or result.shape[1] == 0:
             print(f"  No detection, skipping")
+            cnt_no_detection+=1
             continue
 
         roi = img[int(result[0][1]):int(result[0][3]),
@@ -265,6 +272,8 @@ if __name__ == '__main__':
         final_pts, status, centers = matcher.solve(ellipses_, [*(result[0][:2]), *(result[0][2:]-result[0][:2])])
         if final_pts is not None:
             print(f'find {len(final_pts)} points')
+            if centers.shape[0] < 7:
+                cnt_less_7pts +=1
         else:
             print('find 0 points')
 
@@ -286,6 +295,7 @@ if __name__ == '__main__':
 
             if not optimizer.is_initialized() and not valid:
                 print(f"Frame:{frame_id} frame_{frame_id_val:06d}: PnP failed, skipping pose estimation")
+                cnt_pnp_failed+=1
                 continue
 
             n_inliers = inlier_mask.sum() if inlier_mask is not None else 0
@@ -306,12 +316,13 @@ if __name__ == '__main__':
                 rot_diff = np.linalg.norm(rot_vec_diff) * 180 / np.pi
                 if pos_diff > 20 or rot_diff > 20:
                     print(f"  [WARN] Large pose difference between PnP and last optimized pose: pos_diff={pos_diff:.1f}mm, rot_diff={rot_diff:.1f}deg")
+                    cnt_rejected_frames+=1
                     continue
 
-            all_points_exceed = np.all(per_point_errors_pnp > FRAME_REJECT_THRESHOLD)
-            if all_points_exceed:
-                print(f"  [REJECT] All points exceed threshold {FRAME_REJECT_THRESHOLD} px, frame rejected")
-                continue
+            # all_points_exceed = np.all(per_point_errors_pnp > FRAME_REJECT_THRESHOLD)
+            # if all_points_exceed:
+            #     print(f"  [REJECT] All points exceed threshold {FRAME_REJECT_THRESHOLD} px, frame rejected")
+            #     continue
 
             bMo_init = robot_pose @ eMc @ cMo
             if not optimizer.is_initialized():
@@ -747,5 +758,6 @@ if __name__ == '__main__':
         plt.close()
 
     print("\n" + "=" * 80)
+    print(f"No Dectation:{cnt_no_detection}, Less 7pts:{cnt_less_7pts}, PnP Failed:{cnt_pnp_failed}, Large_Pose_Diff_Rejected:{cnt_rejected_frames}")
     print("All results saved successfully!")
     print("=" * 80)
