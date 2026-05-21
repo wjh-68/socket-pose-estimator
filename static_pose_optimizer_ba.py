@@ -7,6 +7,10 @@ plus one per-frame SE(3) slack variable to absorb timing and robot/camera
 uncertainties.
 """
 
+import argparse
+import os
+
+import cv2
 import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
@@ -17,7 +21,7 @@ class StaticPoseOptimizer:
 
     def __init__(self, K, dist, prior_sigma=None, point_sigmas=None):
         self.K = np.array(K, dtype=np.float64)
-        self.dist = np.array(dist, dtype=np.float64)
+        self.dist = np.array(dist, dtype=np.float64).flatten()
         self.eMc = np.eye(4, dtype=np.float64)
         self.obj_pts = None
         self.point_sigmas = None  # per-point reprojection uncertainty in pixels
@@ -670,7 +674,227 @@ def pose_to_euler_tvec(pose, unit='deg'):
     return euler, tvec
 
 
-if __name__ == '__main__':
+def validate_cMo(cMo):
+    R = cMo[:3, :3]
+    det_R = np.linalg.det(R)
+    if abs(det_R - 1.0) > 1e-6:
+        return False, f"Rotation det={det_R:.4f}"
+    tvec = cMo[:3, 3]
+    if tvec[2] <= 0:
+        return False, f"Object behind camera (z={tvec[2]:.2f})"
+    dist_norm = np.linalg.norm(tvec)
+    if dist_norm < 50 or dist_norm > 3000:
+        return False, f"Object distance={dist_norm:.1f}mm"
+    return True, "ok"
+
+
+def solve_pnp_ippe(pts2d, pts3d, K, dist):
+    success, rvec, tvec = cv2.solvePnP(pts3d, pts2d, K, dist, flags=cv2.SOLVEPNP_IPPE)
+    if not success:
+        return None, None, False
+    rvec = rvec.flatten()
+    tvec = tvec.flatten()
+    cMo = np.eye(4)
+    cMo[:3, :3] = Rotation.from_rotvec(rvec).as_matrix()
+    cMo[:3, 3] = tvec
+    valid, reason = validate_cMo(cMo)
+    if not valid:
+        print(f"  [WARN] PnP invalid: {reason}")
+        return None, None, False
+    return rvec, tvec, True
+
+
+def compute_per_point_reproj_errors(pts3d, rvec, tvec, pts2d, K, dist):
+    proj, _ = cv2.projectPoints(pts3d, rvec, tvec, K, dist)
+    proj = proj.reshape(-1, 2)
+    return np.linalg.norm(proj - pts2d, axis=1)
+
+
+def two_round_pnp(pts2d, pts3d, K, dist, use_adaptive=True, fixed_error_threshold=1.0, adaptive_multiplier=2.0):
+    rvec1, tvec1, valid1 = solve_pnp_ippe(pts2d, pts3d, K, dist)
+    if not valid1:
+        return None, None, False, None, None, None, None
+
+    per_point_errors = compute_per_point_reproj_errors(pts3d, rvec1, tvec1, pts2d, K, dist)
+    round1_error = float(np.mean(per_point_errors))
+
+    if use_adaptive:
+        median_error = np.median(per_point_errors)
+        current_threshold = min(median_error * adaptive_multiplier, fixed_error_threshold)
+    else:
+        current_threshold = fixed_error_threshold
+
+    inlier_mask = per_point_errors < current_threshold
+    n_inliers = int(inlier_mask.sum())
+    if n_inliers >= 4:
+        pts3d_inlier = pts3d[inlier_mask]
+        pts2d_inlier = pts2d[inlier_mask]
+        rvec2, tvec2, valid2 = solve_pnp_ippe(pts2d_inlier, pts3d_inlier, K, dist)
+        if valid2:
+            per_point_errors = compute_per_point_reproj_errors(pts3d, rvec2, tvec2, pts2d, K, dist)
+            return rvec2, tvec2, True, inlier_mask, per_point_errors, round1_error, current_threshold
+        return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
+
+    return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
+
+
+def load_camera_parameters(dataset_path):
+    cam_dir = os.path.join(dataset_path, 'camPrms')
+    intrinsic_path = os.path.join(cam_dir, 'cam_intrisic.xml')
+    extrinsic_path = os.path.join(cam_dir, 'cam_2_gripper.xml')
+    if not os.path.exists(intrinsic_path) or not os.path.exists(extrinsic_path):
+        raise FileNotFoundError('Camera parameters not found in dataset path')
+
+    fs = cv2.FileStorage(intrinsic_path, cv2.FILE_STORAGE_READ)
+    K = fs.getNode('k').mat()
+    dist = fs.getNode('d').mat()
+    fs.release()
+    if K is None or dist is None:
+        raise RuntimeError('Failed to load camera intrinsics')
+
+    fs = cv2.FileStorage(extrinsic_path, cv2.FILE_STORAGE_READ)
+    R = fs.getNode('c2g_r').mat()
+    t = fs.getNode('c2g_t').mat()
+    fs.release()
+    if R is None or t is None:
+        raise RuntimeError('Failed to load camera extrinsics')
+
+    eMc = np.eye(4, dtype=np.float64)
+    eMc[:3, :3] = R.astype(np.float64)
+    eMc[:3, 3] = t.flatten().astype(np.float64)
+    return K.astype(np.float64), dist.flatten().astype(np.float64), eMc
+
+
+def load_dataset_frames(dataset_path, max_frames=None):
+    data_dir = os.path.join(dataset_path, 'data')
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f'Data directory not found: {data_dir}')
+    files = sorted([f for f in os.listdir(data_dir) if f.endswith('.txt')])
+    if max_frames is not None:
+        files = files[:max_frames]
+
+    entries = []
+    for fname in files:
+        frame_id = int(os.path.splitext(fname)[0])
+        txt_path = os.path.join(data_dir, fname)
+        npy_path = os.path.join(data_dir, f'{frame_id}.npy')
+        if not os.path.exists(npy_path):
+            raise FileNotFoundError(f'Missing pose file for frame {frame_id}')
+
+        pts2d = np.loadtxt(txt_path, dtype=np.float64)
+        if pts2d.ndim == 1:
+            pts2d = pts2d.reshape(-1, 2)
+        robot_pose = np.load(npy_path)
+        if robot_pose.shape != (4, 4):
+            raise ValueError(f'Invalid robot pose shape for frame {frame_id}')
+        entries.append((frame_id, pts2d, robot_pose))
+    return entries
+
+
+def run_dataset_example(dataset_path, max_frames=16):
+    print('=== Dataset example ===')
+    K, dist, eMc = load_camera_parameters(dataset_path)
+    obj_pts = np.array([
+        [-8.0, 11.2, 0.0], [8.0, 11.2, 0.0],
+        [-16.0, 0.0, 0.0], [0.0, 0.0, 0.0], [16.0, 0.0, 0.0],
+        [-8.0, -13.9, 0.0], [8.0, -13.9, 0.0]
+    ], dtype=np.float64)
+
+    prior_sigma = np.array([
+        np.deg2rad(5.0),
+        np.deg2rad(5.0),
+        np.deg2rad(1.0),
+        0.5,
+        0.5,
+        10.0
+    ], dtype=np.float64)
+    point_sigmas = np.array([1.5, 1.5, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float64)
+    SLIDING_WINDOW_SIZE = 8
+    MAX_TRANSLATION = 20.0  # mm
+    MAX_ROTATION_DEG = 20.0
+    USE_ADAPTIVE_THRESHOLD = True
+    FIXED_ERROR_THRESHOLD = 1.0
+    ADAPTIVE_MULTIPLIER = 2.0
+
+    optimizer = StaticPoseOptimizer(K, dist, prior_sigma=prior_sigma, point_sigmas=point_sigmas)
+    optimizer.set_extrinsics(eMc)
+    optimizer.set_object_pts(obj_pts)
+
+    entries = load_dataset_frames(dataset_path, max_frames=max_frames)
+    if len(entries) == 0:
+        raise RuntimeError('No dataset frames loaded')
+
+    initialized = False
+    last_bMo = None
+    rejected_frames = 0
+    pnp_failed_frames = 0
+    accepted_frames = 0
+
+    for frame_id, pts2d, robot_pose in entries:
+        if pts2d.shape[0] != len(obj_pts):
+            print(f'  Skip frame {frame_id}: expected 7 points, got {pts2d.shape[0]}')
+            continue
+
+        rvec, tvec, valid, inlier_mask, per_point_errors_pnp, round1_error, used_threshold = two_round_pnp(
+            pts2d, obj_pts, K, dist,
+            use_adaptive=USE_ADAPTIVE_THRESHOLD,
+            fixed_error_threshold=FIXED_ERROR_THRESHOLD,
+            adaptive_multiplier=ADAPTIVE_MULTIPLIER
+        )
+        if not valid:
+            print(f'  Skip frame {frame_id}: PnP validation failed')
+            pnp_failed_frames += 1
+            continue
+
+        if np.all(per_point_errors_pnp > FIXED_ERROR_THRESHOLD):
+            print(f'  [REJECT] Frame {frame_id}: all PnP reprojection errors exceed {FIXED_ERROR_THRESHOLD} px')
+            rejected_frames += 1
+            continue
+
+        cMo = np.eye(4)
+        cMo[:3, :3] = Rotation.from_rotvec(rvec).as_matrix()
+        cMo[:3, 3] = tvec
+        bMo_init = robot_pose @ eMc @ cMo
+
+        if last_bMo is not None and optimizer.is_initialized():
+            cMo_before = np.linalg.inv(eMc) @ np.linalg.inv(robot_pose) @ last_bMo
+            rvec_before = Rotation.from_matrix(cMo_before[:3, :3]).as_rotvec()
+            tvec_before = cMo_before[:3, 3]
+
+            pos_diff = float(np.linalg.norm(tvec - tvec_before))
+            rot_mat_diff = cMo[:3, :3] @ cMo_before[:3, :3].T
+            rot_vec_diff = Rotation.from_matrix(rot_mat_diff).as_rotvec()
+            rot_diff = float(np.degrees(np.linalg.norm(rot_vec_diff)))
+
+            if pos_diff > MAX_TRANSLATION or rot_diff > MAX_ROTATION_DEG:
+                print(f'  [REJECT] Frame {frame_id} rejected: pose difference too large (pos {pos_diff:.1f}mm, rot {rot_diff:.1f}deg)')
+                rejected_frames += 1
+                continue
+
+        if not initialized:
+            optimizer.set_initial_pose(bMo_init)
+            initialized = True
+
+        if optimizer.get_frame_count() >= SLIDING_WINDOW_SIZE:
+            optimizer.remove_oldest_frame()
+
+        optimizer.add_frame(frame_id, robot_pose, pts2d, obj_pts, per_point_errors_pnp=per_point_errors_pnp)
+        result = optimizer.optimize()
+        last_bMo = optimizer.get_pose()
+        accepted_frames += 1
+
+        print(f'  Frame {frame_id}: accepted, PnP mean error {round1_error:.4f}, threshold {used_threshold:.4f}, inliers {int(inlier_mask.sum())}')
+
+    if not initialized:
+        raise RuntimeError('Failed to initialize optimizer with any frame')
+
+    print(f'Accepted frames: {accepted_frames}, rejected frames: {rejected_frames}, pnp failed: {pnp_failed_frames}')
+    print('Optimized pose:')
+    print(optimizer.get_pose())
+    print('Average reprojection error:', optimizer.get_average_error())
+
+
+def run_random_example():
     K = np.array([
         [1015.4, 0, 638.5],
         [0, 1015.4, 386.8],
@@ -697,8 +921,25 @@ if __name__ == '__main__':
         pts2d = np.random.rand(7, 2) * 200 + 400
         optimizer.add_frame(i, robot_pose, pts2d)
 
-    result = optimizer.optimize()
-    print('optimized pose:')
+    optimizer.optimize()
+    print('Optimized pose:')
     print(optimizer.get_pose())
-    print('avg error:', optimizer.get_average_error())
-    print('diagnostics:', optimizer.get_diagnostics())
+    print('Average error:', optimizer.get_average_error())
+    print('Diagnostics:')
+    print(optimizer.get_diagnostics())
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='StaticPoseOptimizer examples')
+    parser.add_argument('--dataset', type=str, default=None, help='Path to dataset root')
+    parser.add_argument('--max-frames', type=int, default=16, help='Maximum number of dataset frames to load')
+    parser.add_argument('--random', action='store_true', help='Run synthetic random example instead of dataset example')
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    if args.dataset and not args.random:
+        run_dataset_example(args.dataset, max_frames=args.max_frames)
+    else:
+        run_random_example()
