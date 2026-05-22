@@ -1,19 +1,25 @@
 import cv2
 from ultralytics import YOLO
-import time
+import json
 from scipy.spatial.transform import Rotation
 import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import threading
+import time
 from static_pose_optimizer_ba import StaticPoseOptimizer, pose_to_euler_tvec
-
-# Load a model
-model = YOLO("checkpoint/best.pt")  # load an official model
+from gemiEd import UltimateSocketMatcher, getInferResult
+import pycylinderedsf as pyced
 
 # ============ Config ============
+# Data source mode: 'offline' for file-based, 'online' for real-time hardware
+DATA_SOURCE_MODE = "offline"  # 'offline' or 'online'
+
+# Offline mode config
 DATA_DIR = "dataset/save_data3/20260511_120244"
-RESULT_DIR = "result/save_data3/20260511_120244/pose_estimation_ba"
+# RESULT_DIR = "result/save_data3/20260511_120244/pose_estimation_ba"
+RESULT_DIR = "result/0515"
 SAVE_DIR = "dataset/save_data3/chb_20260511_120244"
 # DATA_DIR = "dataset/save_data3/20260511_120538"
 # RESULT_DIR = "result/save_data3/20260511_120538/pose_estimation_ba"
@@ -21,16 +27,14 @@ SAVE_DIR = "dataset/save_data3/chb_20260511_120244"
 SLIDING_WINDOW_SIZE = 8
 MAX_FRAMES = -1  # Limit frames for quick test, -1 for all frames
 
-# ============ 数据记录列表 ============
-frame_records = []  # 每帧的中间数据和结果列表
-pnp_records = []   # PnP结果列表
-optimize_records = []  # 优化结果列表
-
-cnt_no_detection = 0    # 模型检测 roi 失败次数
-cnt_rejected_frames = 0 # 因与pnp结果差距大,拒绝加入 optimizer的帧数
-cnt_less_7pts = 0       # 检测到的圆心数<7
-cnt_pnp_failed = 0      # two round pnp failed
-
+# Online mode config
+ROBOT_IP = "192.168.1.20"
+ROBOT_PORT = 30004
+CAMERA_ID = 0
+CAMERA_WIDTH = 2560
+CAMERA_HEIGHT = 1440
+CAMERA_BRIGHTNESS = 128
+FRAME_POSE_SYNC_TOLERANCE_NS = 20_000_000  # 20ms in nanoseconds
 
 # =========== Read metadata config ===========
 BEGIN_FRAME_ID = 1180  # Skip frames with frame_id < this value
@@ -45,19 +49,20 @@ MAX_TRANSLATION = 20    # mm
 MAX_ROTATION_DEG = 20
 
 # Camera on robot end-effector (eye-to-hand extrinsic)
-eMc = np.array([
-    [-7.2267956e-01,  6.9102561e-01, -1.4759262e-02 ,-5.1758522e+01],
-    [-6.9116789e-01, -7.2264087e-01,  8.7790741e-03,  6.0040222e+01],
-    [-4.5990809e-03,  1.6545586e-02,  9.9985254e-01,  9.7955963e+01],
-    [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]
-    ], dtype=np.float64)
+eMc=np.array(
+[[-7.2849429e-01,  6.8505180e-01, -3.0797155e-04, -6.3927837e+01],
+ [-6.8492085e-01, -7.2834611e-01,  1.9882789e-02,  6.0054520e+01],
+ [ 1.3396430e-02 , 1.4695434e-02,  9.9980229e-01, -1.7391582e+02],
+ [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]
+ ],dtype=np.float64)
+
 # camera intrinsics
 K = np.array([
-        [2674.7629874104787,0.,1279.5],
-        [0.,2674.7629874104787,719.5],
-        [0.,0.,1.]
-        ], dtype=np.float64)
-dist = np.array([-0.11744968686298927,0.27089153364253454,0.0012180578884344092,0.00067320963008635703,-0.078845410108757258], dtype=np.float64)
+    [1359.1199645944478,0.,640.54132556823811],
+    [0.,1359.1199645944478,362.00605351844041],
+    [0.,0.,1.]
+    ],dtype=np.float64)
+dist = np.array([-0.11507587466685387,0.28954640142800997,0.002523795531233719,-0.0003497505689869382,-0.093769042874787809],dtype=np.float64)
 # 3D object points in object frame (charge port keypoints)
 obj_pts = np.array([
             [-8.0, 11.2, 0.0], [8.0, 11.2, 0.0],
@@ -141,11 +146,6 @@ def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=0.4):
     inlier_mask = per_point_errors < current_threshold
     n_inliers = inlier_mask.sum()
 
-    # if n_inliers < 4:
-    #     current_threshold = current_threshold * 2
-    #     inlier_mask = per_point_errors < current_threshold
-    #     n_inliers = inlier_mask.sum()
-
     if n_inliers >= 4:
         pts3d_inlier = pts3d[inlier_mask]
         pts2d_inlier = pts2d[inlier_mask]
@@ -153,10 +153,9 @@ def two_round_pnp(pts2d, pts3d, K, dist, error_threshold=0.4):
         if valid2:
             per_point_errors_round2 = compute_per_point_reproj_errors(pts3d, rvec2, tvec2, pts2d, K, dist)
             return rvec2, tvec2, True, inlier_mask, per_point_errors_round2, round1_error, current_threshold
-        else:
-            return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
-    else:
         return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
+
+    return rvec1, tvec1, True, inlier_mask, per_point_errors, round1_error, current_threshold
 
 
 def validate_cMo(cMo):
@@ -177,434 +176,1044 @@ def validate_cMo(cMo):
     return True, "ok"
 
 
-def getInferResult(model, img):
-    results = model(img)
-    if len(results) == 0:
-        return []
-    return results[0].boxes.xyxy.cpu().numpy()
+def draw_ellipse(img, ellipses):
+    vis = img.copy()
+    for ellipse in ellipses:
+        center = (int(ellipse[0]), int(ellipse[1]))
+        axes = (int(ellipse[2]), int(ellipse[3]))
+        angle = ellipse[4]
+        cv2.ellipse(vis, center, axes, angle, 0, 360, (0, 0, 255), 1, cv2.LINE_AA)
+    return vis
 
 
-if __name__ == '__main__':
-    import json
-    from gemiEd import *
+def get_robot_pose_from_rpc(robot_rpc_client, robot_name):
+    """Get robot TCP pose from rpc client, convert to 4x4 matrix."""
+    tcp_pose = robot_rpc_client.getRobotInterface(robot_name).getRobotState().getTcpPose()
+    r = Rotation.from_euler('xyz', tcp_pose[3:])
+    t = np.array(tcp_pose[:3]).reshape((3, 1))
+    robot_pose = np.eye(4)
+    robot_pose[:3, :3] = r.as_matrix()
+    robot_pose[:3, 3] = t.flatten() * 1000  # mm
+    return robot_pose, tcp_pose
 
-    os.makedirs(RESULT_DIR, exist_ok=True)
 
-    optimizer = StaticPoseOptimizer(K, dist, prior_sigma=PRIOR_SIGMA, point_sigmas=POINT_SIGMAS)
-    optimizer.set_extrinsics(eMc)
-    optimizer.set_object_pts(obj_pts)
-
-    meta_path = os.path.join(DATA_DIR, "metadata.json")
-    with open(meta_path, 'r') as f:
-        metadata = json.load(f)
-
-    records = metadata['records']
-    print(f"Loaded {len(records)} frames from {meta_path}")
-
-    frame_id = 1
-    last_bMo = None
-    processed_frames = 0
-    last_timestamp_ns = None
-
-    for record in records:
-        frame_id_val = record['frame_id']
-        if frame_id_val < BEGIN_FRAME_ID:
-            continue
-        time_diff = record['time_diff_ns']/1e9
-        if time_diff > 0.05:
-            continue
-        if MAX_FRAMES > 0 and processed_frames >= MAX_FRAMES:
-            print(f"\nReached max frames limit ({MAX_FRAMES}), stopping...")
-            break
-        processed_frames += 1
-
-        current_timestamp_ns = record['camera_timestamp_ns']
-        if last_timestamp_ns is not None:
-            time_diff_s = (current_timestamp_ns - last_timestamp_ns) / 1e9
-            if time_diff_s < PROCESSED_INTERVAL:
+class SensorDataManager:
+    """Unified interface for both offline (file-based) and online (hardware) data acquisition."""
+    
+    def __init__(self, mode='offline', **kwargs):
+        """
+        Args:
+            mode: 'offline' for file-based, 'online' for real-time hardware
+            **kwargs: mode-specific parameters
+        """
+        self.mode = mode
+        self.is_running = False
+        
+        if mode == 'offline':
+            self._init_offline(**kwargs)
+        elif mode == 'online':
+            self._init_online(**kwargs)
+        else:
+            raise ValueError(f"Unknown data source mode: {mode}")
+    
+    def _init_offline(self, data_dir=None, **kwargs):
+        """Initialize offline mode (file-based)."""
+        self.data_dir = data_dir
+        self.current_frame_idx = 0
+        self.img_files = []
+        self.npy_files = {}
+        
+        if data_dir and os.path.exists(data_dir):
+            self.img_files = sorted([f for f in os.listdir(data_dir) 
+                                    if f.endswith('.jpg') and f != 'temp'])
+            self.npy_files = {f.replace('.npy', ''): f for f in os.listdir(data_dir) 
+                             if f.endswith('.npy')}
+    
+    def _init_online(self, robot_ip=None, robot_port=None, camera_id=0, 
+                     camera_width=2560, camera_height=1440, brightness=128,
+                     sync_tolerance_ns=20_000_000, **kwargs):
+        """Initialize online mode (real-time hardware)."""
+        self.robot_ip = robot_ip
+        self.robot_port = robot_port
+        self.camera_id = camera_id
+        self.camera_width = camera_width
+        self.camera_height = camera_height
+        self.brightness = brightness
+        self.sync_tolerance_ns = sync_tolerance_ns
+        
+        # Thread-safe data storage
+        self.latest_frame = None
+        self.latest_frame_ts = 0
+        self.latest_pose = None
+        self.latest_pose_ts = 0
+        self.frame_lock = threading.Lock()
+        self.pose_lock = threading.Lock()
+        
+        # Robot connection
+        self.robot_rpc_client = None
+        self.robot_name = None
+        self.cap = None
+        
+        self.camera_thread = None
+        self.robot_thread = None
+    
+    def start_online(self):
+        """Start online data acquisition (camera and robot threads)."""
+        if self.mode != 'online':
+            raise ValueError("Cannot start online mode when initialized in offline mode")
+        
+        try:
+            import pyaubo_sdk
+        except ImportError:
+            raise ImportError("pyaubo_sdk is required for online mode. Install it or use offline mode.")
+        
+        # Initialize camera
+        self.cap = cv2.VideoCapture(self.camera_id)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.camera_width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.camera_height)
+        self.cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness)
+        
+        # Initialize robot connection
+        self.robot_rpc_client = pyaubo_sdk.RpcClient()
+        self.robot_rpc_client.connect(self.robot_ip, self.robot_port)
+        
+        if not self.robot_rpc_client.hasConnected():
+            raise RuntimeError("Failed to connect to robot")
+        
+        self.robot_rpc_client.login("aubo", "123456")
+        if not self.robot_rpc_client.hasLogined():
+            raise RuntimeError("Failed to login to robot")
+        
+        self.robot_name = self.robot_rpc_client.getRobotNames()[0]
+        print(f"Connected to robot: {self.robot_name}")
+        
+        # Start acquisition threads
+        self.is_running = True
+        self.camera_thread = threading.Thread(target=self._read_camera_loop, daemon=True)
+        self.robot_thread = threading.Thread(target=self._read_robot_loop, daemon=True)
+        self.camera_thread.start()
+        self.robot_thread.start()
+        
+        print("Online data acquisition started")
+    
+    def _read_camera_loop(self):
+        """Camera thread function."""
+        while self.is_running:
+            ret, frame = self.cap.read()
+            if ret:
+                with self.frame_lock:
+                    self.latest_frame = frame.copy()
+                    self.latest_frame_ts = time.perf_counter_ns()
+            time.sleep(0.05)  # 20Hz sampling
+    
+    def _read_robot_loop(self):
+        """Robot thread function."""
+        while self.is_running:
+            if self.robot_rpc_client is None or self.robot_name is None:
+                time.sleep(0.5)
                 continue
-        last_timestamp_ns = record['camera_timestamp_ns']
+            
+            try:
+                robot_pose, _ = get_robot_pose_from_rpc(self.robot_rpc_client, self.robot_name)
+                with self.pose_lock:
+                    self.latest_pose = robot_pose
+                    self.latest_pose_ts = time.perf_counter_ns()
+            except Exception as e:
+                print(f"Error reading robot pose: {e}")
+                time.sleep(0.01)
+                continue
+            time.sleep(0.02)  # 50Hz sampling
+    
+    def get_next_frame_pose_online(self):
+        """
+        Get synchronized frame and pose in online mode.
+        
+        Returns:
+            tuple: (frame, pose, time_diff_ns, success)
+                - frame: numpy array or None
+                - pose: 4x4 numpy array or None
+                - time_diff_ns: time difference between frame and pose timestamps
+                - success: whether data is valid and synchronized
+        """
+        if self.mode != 'online':
+            raise ValueError("This method only works in online mode")
+        
+        with self.frame_lock:
+            frame = self.latest_frame
+            frame_ts = self.latest_frame_ts
+        
+        with self.pose_lock:
+            pose = self.latest_pose
+            pose_ts = self.latest_pose_ts
+        
+        if frame is None or pose is None:
+            return None, None, -1, False
+        
+        diff_ns = abs(frame_ts - pose_ts)
+        
+        if diff_ns > self.sync_tolerance_ns:
+            return frame, pose, diff_ns, False
+        
+        return frame, pose, diff_ns, True
+    
+    def get_next_frame_pose_offline(self):
+        """
+        Get next frame and pose in offline mode.
+        
+        Returns:
+            tuple: (frame, pose, timestamp_ns, success)
+        """
+        if self.mode != 'offline':
+            raise ValueError("This method only works in offline mode")
+        
+        if self.current_frame_idx >= len(self.img_files):
+            return None, None, 0, False
+        
+        img_file = self.img_files[self.current_frame_idx]
+        img_path = os.path.join(self.data_dir, img_file)
+        
+        # Load image
+        frame = cv2.imread(img_path)
+        if frame is None:
+            print(f"Failed to load image: {img_path}")
+            return None, None, 0, False
+        
+        # Load pose (optional in offline mode)
+        pose = None
+        base_name = os.path.splitext(img_file)[0]
+        if base_name in self.npy_files:
+            npy_path = os.path.join(self.data_dir, self.npy_files[base_name])
+            try:
+                pose_data = np.load(npy_path)
+                if pose_data.shape == (4, 4):
+                    pose = pose_data
+            except Exception as e:
+                print(f"Failed to load pose: {e}")
+        
+        timestamp_ns = int(time.perf_counter_ns())
+        self.current_frame_idx += 1
+        
+        return frame, pose, timestamp_ns, True
+    
+    def get_next_frame_pose(self):
+        """
+        Get next frame and pose (automatically handles mode).
+        
+        Returns:
+            tuple: (frame, pose, timestamp_ns, success)
+                For online: (frame, pose, time_diff_ns, synchronized)
+                For offline: (frame, pose, timestamp_ns, loaded)
+        """
+        if self.mode == 'online':
+            return self.get_next_frame_pose_online()
+        else:
+            return self.get_next_frame_pose_offline()
+    
+    def stop_online(self):
+        """Stop online data acquisition."""
+        if self.mode == 'online':
+            self.is_running = False
+            if self.cap:
+                self.cap.release()
+            if self.camera_thread:
+                self.camera_thread.join(timeout=2.0)
+            if self.robot_thread:
+                self.robot_thread.join(timeout=2.0)
+            print("Online data acquisition stopped")
+    
+    def reset_offline(self):
+        """Reset offline frame counter."""
+        if self.mode == 'offline':
+            self.current_frame_idx = 0
 
-        img_relative_path = record['image_path']
-        img_path = os.path.join(DATA_DIR, img_relative_path)
-        robot_pose = np.array(record['pose_matrix_4x4']).reshape(4, 4)
 
-        print("\n==============================================")
-        print(f"Processing frame {frame_id}: frame_{frame_id_val:06d}.jpg")
+class ChargeportPoseEstimator:
+    def __init__(
+        self,
+        data_source_mode=DATA_SOURCE_MODE,
+        data_dir=DATA_DIR,
+        result_dir=RESULT_DIR,
+        save_dir=SAVE_DIR,
+        model_path='checkpoint/best.pt',
+        sliding_window_size=SLIDING_WINDOW_SIZE,
+        max_frames=MAX_FRAMES,
+        begin_frame_id=BEGIN_FRAME_ID,
+        processed_interval=PROCESSED_INTERVAL,
+        use_adaptive_threshold=USE_ADAPTIVE_THRESHOLD,
+        fixed_error_threshold=FIXED_ERROR_THRESHOLD,
+        adaptive_multiplier=ADAPTIVE_MULTIPLIER,
+        max_translation=MAX_TRANSLATION,
+        max_rotation_deg=MAX_ROTATION_DEG,
+        # Online mode parameters
+        robot_ip=ROBOT_IP,
+        robot_port=ROBOT_PORT,
+        camera_id=CAMERA_ID,
+        camera_width=CAMERA_WIDTH,
+        camera_height=CAMERA_HEIGHT,
+        camera_brightness=CAMERA_BRIGHTNESS,
+        sync_tolerance_ns=FRAME_POSE_SYNC_TOLERANCE_NS,
+    ):
+        self.data_source_mode = data_source_mode
+        self.data_dir = data_dir
+        self.result_dir = result_dir
+        self.save_dir = save_dir
+        self.sliding_window_size = sliding_window_size
+        self.max_frames = max_frames
+        self.begin_frame_id = begin_frame_id
+        self.processed_interval = processed_interval
+        self.use_adaptive_threshold = use_adaptive_threshold
+        self.fixed_error_threshold = fixed_error_threshold
+        self.adaptive_multiplier = adaptive_multiplier
+        self.max_translation = max_translation
+        self.max_rotation_deg = max_rotation_deg
 
-        img = cv2.imread(img_path)
+        self.model = YOLO(model_path)
+
+        self.optimizer = StaticPoseOptimizer(K, dist, prior_sigma=PRIOR_SIGMA, point_sigmas=POINT_SIGMAS)
+        self.optimizer.set_extrinsics(eMc)
+        self.optimizer.set_object_pts(obj_pts)
+
+        # Initialize data source manager
+        if data_source_mode == 'offline':
+            self.data_source = SensorDataManager(
+                mode='offline',
+                data_dir=data_dir
+            )
+        elif data_source_mode == 'online':
+            self.data_source = SensorDataManager(
+                mode='online',
+                robot_ip=robot_ip,
+                robot_port=robot_port,
+                camera_id=camera_id,
+                camera_width=camera_width,
+                camera_height=camera_height,
+                brightness=camera_brightness,
+                sync_tolerance_ns=sync_tolerance_ns,
+            )
+        else:
+            raise ValueError(f"Unknown data source mode: {data_source_mode}")
+
+        self._reset_statistics()
+
+    def _reset_statistics(self):
+        self.frame_records = []
+        self.pnp_records = []
+        self.optimize_records = []
+
+        self.cnt_no_detection = 0
+        self.cnt_rejected_frames = 0
+        self.cnt_less_7pts = 0
+        self.cnt_pnp_failed = 0
+        self.last_bMo = None
+
+    def _load_metadata(self):
+        metadata_path = os.path.join(self.data_dir, 'metadata.json')
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        return metadata['records']
+
+    def _parse_robot_pose(self, record):
+        return np.array(record['pose_matrix_4x4']).reshape(4, 4)
+
+    def _is_record_eligible(self, record):
+        if record['frame_id'] < self.begin_frame_id:
+            return False
+        if record['time_diff_ns'] / 1e9 > 0.05:
+            return False
+        return True
+
+    def _should_skip_by_interval(self, current_timestamp_ns, last_timestamp_ns):
+        if last_timestamp_ns is None:
+            return False
+        return (current_timestamp_ns - last_timestamp_ns) / 1e9 < self.processed_interval
+
+    def _load_image(self, record):
+        image_path = os.path.join(self.data_dir, record['image_path'])
+        img = cv2.imread(image_path)
         if img is None:
-            print(f"Failed to read image: {img_path}")
-            continue
+            print(f"Failed to read image: {image_path}")
+        return img
 
-        img_float = img.astype(np.float32)
-        img_bright = img_float - 50
-        img_bright = np.clip(img_bright, 0, 255).astype(np.uint8)
-        result = getInferResult(model, img_bright)
-        if result.shape[0] == 0 or result.shape[1] == 0:
-            print(f"  No detection, skipping")
-            cnt_no_detection+=1
-            continue
+    def _detect_socket(self, img):
+        img_bright = np.clip(img.astype(np.float32) - 50, 0, 255).astype(np.uint8)
+        infer_result = getInferResult(self.model, img_bright)
+        if not infer_result or len(infer_result) != 2:
+            return None, None
 
-        roi = img[int(result[0][1]):int(result[0][3]),
-                  int(result[0][0]):int(result[0][2])]
-        roi_x_min = int(result[0][0])
-        roi_y_min = int(result[0][1])
-        roi_x_max = int(result[0][2])
-        roi_y_max = int(result[0][3])
+        boxes, keypoints = infer_result
+        if boxes is None or len(boxes) == 0:
+            return None, None
 
-        detector = pyced.CED(np.ascontiguousarray(roi))
-        detector.run_CED()
-        rotRects = detector.getEllipsesAfterCluster()
-        ellipses_ = []
+        return boxes, keypoints
 
-        for e in rotRects:
-            ellipses_.append((*e.center, e.size[0]/2, e.size[1]/2, e.angle))
+    def _extract_roi(self, img, box):
+        x0, y0, x1, y1 = map(int, box[:4])
+        x0 = max(0, x0)
+        y0 = max(0, y0)
+        x1 = min(img.shape[1], x1)
+        y1 = min(img.shape[0], y1)
+        roi = img[y0:y1, x0:x1]
+        return roi, x0, y0, x1, y1
 
-        matcher = UltimateSocketMatcher()
+    def _normalize_keypoints(self, keypoints, top_left):
+        if keypoints is None:
+            return None
+        keypoints = np.array(keypoints, dtype=np.float64)
+        if keypoints.ndim == 1:
+            keypoints = keypoints.reshape(-1, 2)
+        return keypoints - np.array(top_left, dtype=np.float64)
+
+    def _create_matcher(self):
+        matcher = UltimateSocketMatcher(True)
         matcher.obj_pts = obj_pts
         matcher.K = K
         matcher.dist = dist
         matcher.eMc = eMc
+        return matcher
 
-        vis_ellipse = draw_ellipse(roi, ellipses_)
+    def _detect_ellipses(self, roi):
+        detector = pyced.CED(np.ascontiguousarray(roi))
+        detector.run_CED()
+        rot_rects = detector.getEllipsesAfterCluster()
+        return [(*e.center, e.size[0] / 2, e.size[1] / 2, e.angle) for e in rot_rects]
 
-        final_pts, status, centers = matcher.solve(ellipses_, [*(result[0][:2]), *(result[0][2:]-result[0][:2])])
-        if final_pts is not None:
-            print(f'find {len(final_pts)} points')
-            if centers.shape[0] < 7:
-                cnt_less_7pts +=1
-        else:
-            print('find 0 points')
+    def _match_socket(self, box, keypoints, roi_top_left, roi):
+        normalized_keypoints = self._normalize_keypoints(keypoints, roi_top_left)
+        ellipses = self._detect_ellipses(roi)
+        if len(ellipses) == 0:
+            print("  No ellipses detected in ROI, skipping")
+            return None
 
-        inlier_mask = None
+        matcher = self._create_matcher()
+        box_xywh = [*(box[:2]), *(box[2:] - box[:2])]
+        final_pts, status, centers = matcher.solve(ellipses, box_xywh, keypoints=normalized_keypoints)
+        if final_pts is None or len(final_pts) == 0:
+            print("  Matcher failed to find valid correspondences, skipping")
+            return None
+        return final_pts, status, centers, matcher
 
-        if final_pts is not None and centers.shape[0] >= 7:
-            pts3d = matcher.obj_pts[matcher.r_idx]
-            pts2d = centers
+    def _compute_pnp_results(self, pts2d, pts3d):
+        rvec, tvec, valid, inlier_mask, per_point_errors, round1_error, used_threshold = two_round_pnp(
+            pts2d, pts3d, K, dist, error_threshold=self.fixed_error_threshold)
+        return {
+            'valid': valid,
+            'rvec': rvec,
+            'tvec': tvec,
+            'inlier_mask': inlier_mask,
+            'per_point_errors': per_point_errors,
+            'round1_error': round1_error,
+            'used_threshold': used_threshold,
+        }
 
-            rvec, tvec, valid, inlier_mask, per_point_errors_pnp, round1_error, used_threshold = two_round_pnp(
-                pts2d, pts3d, K, dist, error_threshold=FIXED_ERROR_THRESHOLD)
+    def _prepare_optimizer(self, frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp, bMo_init):
+        if not self.optimizer.is_initialized():
+            self.optimizer.set_initial_pose(bMo_init)
 
-            cMo = np.eye(4)
-            cMo[:3, :3] = Rotation.from_rotvec(rvec).as_matrix()
-            cMo[:3, 3] = tvec
+        if self.optimizer.get_frame_count() >= self.sliding_window_size:
+            self.optimizer.remove_oldest_frame()
 
-            rvec = np.array(rvec).tolist()
-            tvec = np.array(tvec).tolist()
+        self.optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp=per_point_errors_pnp)
+        self.optimizer.optimize()
 
-            if not optimizer.is_initialized() and not valid:
-                print(f"Frame:{frame_id} frame_{frame_id_val:06d}: PnP failed, skipping pose estimation")
-                cnt_pnp_failed+=1
-                continue
+        bMo_optimized = self.optimizer.get_pose()
+        self.last_bMo = bMo_optimized
+        cMo_optimized = self.optimizer.compute_cMo(robot_pose, frame_id)
+        return bMo_optimized, cMo_optimized
 
-            n_inliers = inlier_mask.sum() if inlier_mask is not None else 0
-            pnp_error = per_point_errors_pnp.mean()
+    def _append_records(
+        self,
+        frame_id,
+        frame_id_val,
+        timestamp_ns,
+        robot_pose,
+        pts2d,
+        pts3d,
+        bMo_init,
+        bMo_optimized,
+        cMo,
+        cMo_optimized,
+        pnp_results,
+        pnp_error_ba,
+        rvec_ba,
+        tvec_ba,
+        now_error,
+        ave_error,
+        bMo_euler,
+        bMo_tvec,
+        cMo_euler,
+        cMo_tvec,
+    ):
+        inlier_mask = pnp_results['inlier_mask']
+        per_point_errors = pnp_results['per_point_errors']
+        round1_error = pnp_results['round1_error']
+        used_threshold = pnp_results['used_threshold']
+        rvec = pnp_results['rvec']
+        tvec = pnp_results['tvec']
 
-            if last_bMo is not None and optimizer.is_initialized():
-                cMo_before = np.linalg.inv(eMc) @ np.linalg.inv(robot_pose) @ last_bMo
-                rvec_before = Rotation.from_matrix(cMo_before[:3, :3]).as_rotvec()
-                tvec_before = cMo_before[:3, 3]
-                per_point_errors_before = compute_per_point_reproj_errors(pts3d, rvec_before, tvec_before, pts2d, K, dist)
-                print(f"Per-point reprojection errors of last optimized pose (px):")
-                obj_pt_names = ['L-top', 'R-top', 'L-mid', 'center', 'R-mid', 'L-bot', 'R-bot']
-                for i, (err, pt_name) in enumerate(zip(per_point_errors_before, obj_pt_names[:len(per_point_errors_before)])):
-                    print(f"  Point {i} ({pt_name}): {err:7.3f} px")
-                pos_diff = np.linalg.norm(tvec - tvec_before)
-                rot_mat_diff = cMo[:3, :3] @ cMo_before[:3, :3].T
-                rot_vec_diff = Rotation.from_matrix(rot_mat_diff).as_rotvec()
-                rot_diff = np.linalg.norm(rot_vec_diff) * 180 / np.pi
-                if pos_diff > 20 or rot_diff > 20:
-                    print(f"  [WARN] Large pose difference between PnP and last optimized pose: pos_diff={pos_diff:.1f}mm, rot_diff={rot_diff:.1f}deg")
-                    cnt_rejected_frames+=1
-                    continue
+        self.pnp_records.append({
+            'frame_id': frame_id_val,
+            'frame_idx': frame_id,
+            'timestamp_ns': int(timestamp_ns),
+            'robot_pose': robot_pose.tolist(),
+            'n_points': len(pts2d),
+            'n_inliers': int(inlier_mask.sum()) if inlier_mask is not None else 0,
+            'used_threshold': float(used_threshold),
+            'pnp_error_round1': float(round1_error),
+            'pnp_error_final': float(per_point_errors.mean()),
+            'pnp_error_ba': float(pnp_error_ba),
+            'per_point_errors': per_point_errors.tolist(),
+            'inlier_mask': inlier_mask.tolist() if inlier_mask is not None else None,
+            'rvec': np.array(rvec).tolist(),
+            'tvec': np.array(tvec).tolist(),
+            'cMo_euler': cMo_euler.tolist(),
+            'cMo_tvec': cMo_tvec.tolist(),
+            'bMo_pnp_euler': pose_to_euler_tvec(bMo_init)[0].tolist(),
+            'bMo_pnp_tvec': pose_to_euler_tvec(bMo_init)[1].tolist(),
+        })
 
-            # all_points_exceed = np.all(per_point_errors_pnp > FRAME_REJECT_THRESHOLD)
-            # if all_points_exceed:
-            #     print(f"  [REJECT] All points exceed threshold {FRAME_REJECT_THRESHOLD} px, frame rejected")
-            #     continue
+        self.optimize_records.append({
+            'frame_id': frame_id_val,
+            'frame_idx': frame_id,
+            'timestamp_ns': int(timestamp_ns),
+            'bMo_euler': bMo_euler.tolist(),
+            'bMo_tvec': bMo_tvec.tolist(),
+            'cMo_euler': cMo_euler.tolist(),
+            'cMo_tvec': cMo_tvec.tolist(),
+            'n_frames_in_optimizer': self.optimizer.get_frame_count(),
+            'frame_error': float(now_error),
+            'avg_error': float(ave_error) if ave_error is not None else None,
+        })
 
-            bMo_init = robot_pose @ eMc @ cMo
-            if not optimizer.is_initialized():
-                optimizer.set_initial_pose(bMo_init)
+        self.frame_records.append({
+            'frame_id': frame_id_val,
+            'frame_idx': frame_id,
+            'timestamp_ns': int(timestamp_ns),
+            'robot_pose': robot_pose.tolist(),
+            'pts2d': pts2d.tolist(),
+            'pts3d': pts3d.tolist(),
+            'bMo_init': bMo_init.tolist(),
+            'bMo_optimized': bMo_optimized.tolist(),
+            'cMo': cMo.tolist(),
+            'cMo_optimized': cMo_optimized.tolist(),
+            'pnp_error': float(per_point_errors.mean()),
+            'optimized_error': float(now_error),
+            'avg_error': float(ave_error) if ave_error is not None else None,
+            'per_point_errors_pnp': per_point_errors.tolist(),
+            'inlier_mask': inlier_mask.tolist() if inlier_mask is not None else None,
+        })
 
-            if optimizer.get_frame_count() >= SLIDING_WINDOW_SIZE:
-                optimizer.remove_oldest_frame()
+    def _render_frame(
+        self,
+        img,
+        roi_bounds,
+        centers,
+        pts3d,
+        rvec_optimized,
+        tvec_optimized,
+        cMo,
+        inlier_mask,
+        frame_id_val,
+    ):
+        roi_x_min, roi_y_min, roi_x_max, roi_y_max = roi_bounds
+        cv2.drawFrameAxes(img, K, dist, cMo[:3, :3], cMo[:3, 3:], 10, 3)
+        proj, _ = cv2.projectPoints(pts3d, rvec_optimized, tvec_optimized, K, dist)
 
-            # # save dataset for chb
-            # # centers
-            # coords = []
-            # for cc in pts2d:
-            #     if cc is not None:
-            #         coords.append(f"{cc[0]:.4f} {cc[1]:.4f}")
-            #     else:
-            #         coords.append("-1 -1")
-            # txt_path = os.path.join(SAVE_DIR, 'data', f"{frame_id_val}.txt")
-            # with open(txt_path, 'w') as f:
-            #     f.write(' '.join(coords))
-            # # robot poses
-            # save_pose_path = os.path.join(SAVE_DIR, 'data', f"{frame_id_val}.npy")
-            # np.save(save_pose_path, robot_pose)
-            # # images
-            # save_img_path = os.path.join(SAVE_DIR, 'image', f"{frame_id_val}.png")
-            # cv2.imwrite(save_img_path, img)
-
-            # Add frame with per_point_errors_pnp for dynamic weighting in optimizer
-            optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp=per_point_errors_pnp)
-            result_optimized = optimizer.optimize()
-
-            bMo_optimized = optimizer.get_pose()
-            last_bMo = bMo_optimized
-
-            cMo_optimized = optimizer.compute_cMo(robot_pose, frame_id)
-            rvec_optimized = Rotation.from_matrix(cMo_optimized[:3, :3]).as_rotvec()
-            tvec_optimized = cMo_optimized[:3, 3]
-
-            if n_inliers >= 4:
-                pts3d_inlier = pts3d[inlier_mask]
-                pts2d_inlier = pts2d[inlier_mask]
+        for i, (x, y) in enumerate(centers):
+            if inlier_mask is not None and i < len(inlier_mask):
+                color = (0, 255, 0) if inlier_mask[i] else (0, 0, 255)
             else:
-                pts3d_inlier = pts3d
-                pts2d_inlier = pts2d
-            success, rvec_ba, tvec_ba = cv2.solvePnP(pts3d_inlier, pts2d_inlier, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
-            cMo_ba = np.eye(4)
-            cMo_ba[:3, :3] = Rotation.from_rotvec(rvec_ba.flatten()).as_matrix()
-            cMo_ba[:3, 3] = tvec_ba.flatten()
-            bMo_ba = robot_pose @ eMc @ cMo_ba
+                color = (255, 255, 0)
+            cv2.circle(img, (int(x), int(y)), 3, color, 1)
+            x_proj, y_proj = proj[i][0]
+            cv2.drawMarker(img, (int(x_proj), int(y_proj)), (255, 0, 0), cv2.MARKER_CROSS, 5, 1)
+            cv2.line(img, (int(x), int(y)), (int(x_proj), int(y_proj)), (0, 255, 0), 1)
+            cv2.putText(img, str(i), (int(x)-8, int(y)-8), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
-            print(f"bMo_optimized: {pose_to_euler_tvec(bMo_optimized)}")
-            print(f"bMo_pnp: {pose_to_euler_tvec(bMo_init)}")
-            print(f"bMo_ba: {pose_to_euler_tvec(bMo_ba)}")
-            print(f"cMo_optimized: {pose_to_euler_tvec(cMo_optimized)}")
-            print(f"cMo_pnp: {pose_to_euler_tvec(cMo)}")
-            print(f"cMo_ba: {pose_to_euler_tvec(cMo_ba)}")
+        pad = 50
+        roi_y_min_clamped = max(0, roi_y_min - pad)
+        roi_y_max_clamped = min(img.shape[0], roi_y_max + pad)
+        roi_x_min_clamped = max(0, roi_x_min - pad)
+        roi_x_max_clamped = min(img.shape[1], roi_x_max + pad)
+        vis_result = img[roi_y_min_clamped:roi_y_max_clamped, roi_x_min_clamped:roi_x_max_clamped]
+        vis_result = cv2.resize(vis_result, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+        vis_result_path = os.path.join(self.result_dir, f"frame_{frame_id_val:06d}_vis_result.png")
+        cv2.imwrite(vis_result_path, vis_result)
 
-            pnp_error_ba = compute_reproj_error(pts3d_inlier, rvec_ba, tvec_ba, pts2d_inlier, K, dist)
-            print(f"PnP reprojection error: {pnp_error:.4f} (round1: {round1_error:.4f})")
-            print(f"PnP reprojection error (BA, {n_inliers} inliers): {pnp_error_ba:.4f}")
+    def _process_one_frame(self, img, robot_pose, frame_id, timestamp_ns):
+        if img is None:
+            print("  Invalid image, skipping")
+            return False
 
-            now_error, _ = optimizer.get_frame_error(frame_id)
-            print(f"Optimized reprojection error: {now_error:.4f}")
-            ave_error = optimizer.get_average_error()
-            print(f"Average reprojection error: {ave_error:.4f}")
+        boxes, keypoints = self._detect_socket(img)
+        if boxes is None:
+            self.cnt_no_detection += 1
+            print("  No detection, skipping")
+            return False
 
-            bMo_euler, bMo_tvec = pose_to_euler_tvec(bMo_optimized)
-            cMo_euler, cMo_tvec = pose_to_euler_tvec(cMo_optimized)
+        roi, roi_x_min, roi_y_min, roi_x_max, roi_y_max = self._extract_roi(img, boxes[0])
+        match_result = self._match_socket(boxes[0], keypoints, (roi_x_min, roi_y_min), roi)
+        if match_result is None:
+            print('find 0 points')
+            return False
 
-            pnp_record = {
-                'frame_id': frame_id_val,
-                'frame_idx': frame_id,
-                'timestamp_ns': int(current_timestamp_ns),
-                'robot_pose': robot_pose.tolist(),
-                'n_points': len(pts2d),
-                'n_inliers': int(n_inliers),
-                'used_threshold': float(used_threshold),
-                'pnp_error_round1': float(round1_error),
-                'pnp_error_final': float(pnp_error),
-                'pnp_error_ba': float(pnp_error_ba),
-                'per_point_errors': per_point_errors_pnp.tolist(),
-                'inlier_mask': inlier_mask.tolist() if inlier_mask is not None else None,
-                'rvec': np.array(rvec).tolist(),
-                'tvec': np.array(tvec).tolist(),
-                'cMo_euler': cMo_euler.tolist(),
-                'cMo_tvec': cMo_tvec.tolist(),
-                'bMo_pnp_euler': pose_to_euler_tvec(bMo_init)[0].tolist(),
-                'bMo_pnp_tvec': pose_to_euler_tvec(bMo_init)[1].tolist(),
-            }
-            pnp_records.append(pnp_record)
+        final_pts, status, centers, matcher = match_result
+        if centers.shape[0] < 7:
+            self.cnt_less_7pts += 1
+            print(f'find {len(final_pts)} points, less than 7')
+            return False
 
-            opt_record = {
-                'frame_id': frame_id_val,
-                'frame_idx': frame_id,
-                'timestamp_ns': current_timestamp_ns,
-                'bMo_euler': bMo_euler.tolist(),
-                'bMo_tvec': bMo_tvec.tolist(),
-                'cMo_euler': cMo_euler.tolist(),
-                'cMo_tvec': cMo_tvec.tolist(),
-                'n_frames_in_optimizer': optimizer.get_frame_count(),
-                'frame_error': float(now_error),
-                'avg_error': float(ave_error) if ave_error is not None else None,
-            }
-            optimize_records.append(opt_record)
+        pts3d = matcher.obj_pts
+        pts2d = centers
 
-            frame_record = {
-                'frame_id': frame_id_val,
-                'frame_idx': frame_id,
-                'timestamp_ns': int(current_timestamp_ns),
-                'robot_pose': robot_pose.tolist(),
-                'pts2d': pts2d.tolist(),
-                'pts3d': pts3d.tolist(),
-                'bMo_init': bMo_init.tolist(),
-                'bMo_optimized': bMo_optimized.tolist(),
-                'cMo': cMo.tolist(),
-                'cMo_optimized': cMo_optimized.tolist(),
-                'pnp_error': float(pnp_error),
-                'optimized_error': float(now_error),
-                'avg_error': float(ave_error) if ave_error is not None else None,
-                'per_point_errors_pnp': per_point_errors_pnp.tolist(),
-                'inlier_mask': inlier_mask.tolist() if inlier_mask is not None else None,
-            }
-            frame_records.append(frame_record)
+        pnp_results = self._compute_pnp_results(pts2d, pts3d)
+        if not pnp_results['valid']:
+            self.cnt_pnp_failed += 1
+            print(f"Frame:{frame_id}: PnP failed, skipping pose estimation")
+            return False
 
-            cv2.drawFrameAxes(img, K, dist, cMo_optimized[:3, :3], cMo_optimized[:3, 3:], 10, 3)
-            cv2.drawFrameAxes(img, K, dist, cMo[:3, :3], cMo[:3, 3:], 20, 1)
+        # if np.all(pnp_results['per_point_errors'] > self.fixed_error_threshold):
+        #     self.cnt_rejected_frames += 1
+        #     print(f"  [REJECT] All points exceed threshold {self.fixed_error_threshold} px")
+        #     return False
 
-            frame_id += 1
+        cMo = np.eye(4)
+        cMo[:3, :3] = Rotation.from_rotvec(pnp_results['rvec']).as_matrix()
+        cMo[:3, 3] = pnp_results['tvec']
 
-            proj, _ = cv2.projectPoints(pts3d, rvec_optimized, tvec_optimized, K, dist)
-            if centers is not None:
-                for i, (x, y) in enumerate(centers):
-                    if inlier_mask is not None and i < len(inlier_mask):
-                        color = (0, 255, 0) if inlier_mask[i] else (0, 0, 255)
+        if self._should_reject_pose_diff(cMo, robot_pose):
+            self.cnt_rejected_frames += 1
+            return False
+
+        bMo_init = robot_pose @ eMc @ cMo
+        bMo_optimized, cMo_optimized = self._prepare_optimizer(
+            frame_id,
+            robot_pose,
+            pts2d,
+            pts3d,
+            pnp_results['per_point_errors'],
+            bMo_init,
+        )
+
+        rvec_optimized = Rotation.from_matrix(cMo_optimized[:3, :3]).as_rotvec()
+        tvec_optimized = cMo_optimized[:3, 3]
+
+        if pnp_results['inlier_mask'] is not None and pnp_results['inlier_mask'].sum() >= 4:
+            pts3d_inlier = pts3d[pnp_results['inlier_mask']]
+            pts2d_inlier = pts2d[pnp_results['inlier_mask']]
+        else:
+            pts3d_inlier = pts3d
+            pts2d_inlier = pts2d
+
+        success, rvec_ba, tvec_ba = cv2.solvePnP(pts3d_inlier, pts2d_inlier, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
+        cMo_ba = np.eye(4)
+        cMo_ba[:3, :3] = Rotation.from_rotvec(rvec_ba.flatten()).as_matrix()
+        cMo_ba[:3, 3] = tvec_ba.flatten()
+        bMo_ba = robot_pose @ eMc @ cMo_ba
+
+        print(f"bMo_optimized: {pose_to_euler_tvec(bMo_optimized)}")
+        print(f"bMo_pnp: {pose_to_euler_tvec(bMo_init)}")
+        print(f"bMo_ba: {pose_to_euler_tvec(bMo_ba)}")
+        print(f"cMo_optimized: {pose_to_euler_tvec(cMo_optimized)}")
+        print(f"cMo_pnp: {pose_to_euler_tvec(cMo)}")
+        print(f"cMo_ba: {pose_to_euler_tvec(cMo_ba)}")
+
+        pnp_error_ba = compute_reproj_error(pts3d_inlier, rvec_ba, tvec_ba, pts2d_inlier, K, dist)
+        print(f"PnP reprojection error: {pnp_results['per_point_errors'].mean():.4f} (round1: {pnp_results['round1_error']:.4f})")
+        print(f"PnP reprojection error (BA, {int(pnp_results['inlier_mask'].sum()) if pnp_results['inlier_mask'] is not None else 0} inliers): {pnp_error_ba:.4f}")
+
+        now_error, _ = self.optimizer.get_frame_error(frame_id)
+        print(f"Optimized reprojection error: {now_error:.4f}")
+        ave_error = self.optimizer.get_average_error()
+        print(f"Average reprojection error: {ave_error:.4f}")
+
+        bMo_euler, bMo_tvec = pose_to_euler_tvec(bMo_optimized)
+        cMo_euler, cMo_tvec = pose_to_euler_tvec(cMo_optimized)
+
+        self._append_records(
+            frame_id=frame_id,
+            frame_id_val=frame_id,
+            timestamp_ns=timestamp_ns,
+            robot_pose=robot_pose,
+            pts2d=pts2d,
+            pts3d=pts3d,
+            bMo_init=bMo_init,
+            bMo_optimized=bMo_optimized,
+            cMo=cMo,
+            cMo_optimized=cMo_optimized,
+            pnp_results=pnp_results,
+            pnp_error_ba=pnp_error_ba,
+            rvec_ba=rvec_ba,
+            tvec_ba=tvec_ba,
+            now_error=now_error,
+            ave_error=ave_error,
+            bMo_euler=bMo_euler,
+            bMo_tvec=bMo_tvec,
+            cMo_euler=cMo_euler,
+            cMo_tvec=cMo_tvec,
+        )
+
+        self._render_frame(
+            img=img,
+            roi_bounds=(roi_x_min, roi_y_min, roi_x_max, roi_y_max),
+            centers=centers,
+            pts3d=pts3d,
+            rvec_optimized=rvec_optimized,
+            tvec_optimized=tvec_optimized,
+            cMo=cMo_optimized,
+            inlier_mask=pnp_results['inlier_mask'],
+            frame_id_val=frame_id,
+        )
+
+        return True
+
+    def _process_frame(self, record, frame_id):
+        img = self._load_image(record)
+        if img is None:
+            return False
+
+        boxes, keypoints = self._detect_socket(img)
+        if boxes is None:
+            self.cnt_no_detection += 1
+            print("  No detection, skipping")
+            return False
+
+        roi, roi_x_min, roi_y_min, roi_x_max, roi_y_max = self._extract_roi(img, boxes[0])
+        match_result = self._match_socket(boxes[0], keypoints, (roi_x_min, roi_y_min), roi)
+        if match_result is None:
+            print('find 0 points')
+            return False
+
+        final_pts, status, centers, matcher = match_result
+        if centers.shape[0] < 7:
+            self.cnt_less_7pts += 1
+            print(f'find {len(final_pts)} points, less than 7')
+            return False
+
+        pts3d = matcher.obj_pts[matcher.r_idx]
+        pts2d = centers
+
+        pnp_results = self._compute_pnp_results(pts2d, pts3d)
+        if not pnp_results['valid']:
+            self.cnt_pnp_failed += 1
+            print(f"Frame:{frame_id} frame_{record['frame_id']:06d}: PnP failed, skipping pose estimation")
+            return False
+
+        # if np.all(pnp_results['per_point_errors'] > self.fixed_error_threshold):
+        #     self.cnt_rejected_frames += 1
+        #     print(f"  [REJECT] All points exceed threshold {self.fixed_error_threshold} px")
+        #     return False
+
+        cMo = np.eye(4)
+        cMo[:3, :3] = Rotation.from_rotvec(pnp_results['rvec']).as_matrix()
+        cMo[:3, 3] = pnp_results['tvec']
+
+        robot_pose = self._parse_robot_pose(record)
+        if self._should_reject_pose_diff(cMo, robot_pose):
+            self.cnt_rejected_frames += 1
+            return False
+
+        bMo_init = robot_pose @ eMc @ cMo
+        bMo_optimized, cMo_optimized = self._prepare_optimizer(
+            frame_id,
+            robot_pose,
+            pts2d,
+            pts3d,
+            pnp_results['per_point_errors'],
+            bMo_init,
+        )
+
+        rvec_optimized = Rotation.from_matrix(cMo_optimized[:3, :3]).as_rotvec()
+        tvec_optimized = cMo_optimized[:3, 3]
+
+        if pnp_results['inlier_mask'] is not None and pnp_results['inlier_mask'].sum() >= 4:
+            pts3d_inlier = pts3d[pnp_results['inlier_mask']]
+            pts2d_inlier = pts2d[pnp_results['inlier_mask']]
+        else:
+            pts3d_inlier = pts3d
+            pts2d_inlier = pts2d
+
+        success, rvec_ba, tvec_ba = cv2.solvePnP(pts3d_inlier, pts2d_inlier, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
+        cMo_ba = np.eye(4)
+        cMo_ba[:3, :3] = Rotation.from_rotvec(rvec_ba.flatten()).as_matrix()
+        cMo_ba[:3, 3] = tvec_ba.flatten()
+        bMo_ba = robot_pose @ eMc @ cMo_ba
+
+        print(f"bMo_optimized: {pose_to_euler_tvec(bMo_optimized)}")
+        print(f"bMo_pnp: {pose_to_euler_tvec(bMo_init)}")
+        print(f"bMo_ba: {pose_to_euler_tvec(bMo_ba)}")
+        print(f"cMo_optimized: {pose_to_euler_tvec(cMo_optimized)}")
+        print(f"cMo_pnp: {pose_to_euler_tvec(cMo)}")
+        print(f"cMo_ba: {pose_to_euler_tvec(cMo_ba)}")
+
+        pnp_error_ba = compute_reproj_error(pts3d_inlier, rvec_ba, tvec_ba, pts2d_inlier, K, dist)
+        print(f"PnP reprojection error: {pnp_results['per_point_errors'].mean():.4f} (round1: {pnp_results['round1_error']:.4f})")
+        print(f"PnP reprojection error (BA, {int(pnp_results['inlier_mask'].sum()) if pnp_results['inlier_mask'] is not None else 0} inliers): {pnp_error_ba:.4f}")
+
+        now_error, _ = self.optimizer.get_frame_error(frame_id)
+        print(f"Optimized reprojection error: {now_error:.4f}")
+        ave_error = self.optimizer.get_average_error()
+        print(f"Average reprojection error: {ave_error:.4f}")
+
+        bMo_euler, bMo_tvec = pose_to_euler_tvec(bMo_optimized)
+        cMo_euler, cMo_tvec = pose_to_euler_tvec(cMo_optimized)
+
+        self._append_records(
+            frame_id=frame_id,
+            frame_id_val=record['frame_id'],
+            timestamp_ns=record['camera_timestamp_ns'],
+            robot_pose=robot_pose,
+            pts2d=pts2d,
+            pts3d=pts3d,
+            bMo_init=bMo_init,
+            bMo_optimized=bMo_optimized,
+            cMo=cMo,
+            cMo_optimized=cMo_optimized,
+            pnp_results=pnp_results,
+            pnp_error_ba=pnp_error_ba,
+            rvec_ba=rvec_ba,
+            tvec_ba=tvec_ba,
+            now_error=now_error,
+            ave_error=ave_error,
+            bMo_euler=bMo_euler,
+            bMo_tvec=bMo_tvec,
+            cMo_euler=cMo_euler,
+            cMo_tvec=cMo_tvec,
+        )
+
+        self._render_frame(
+            img=img,
+            roi_bounds=(roi_x_min, roi_y_min, roi_x_max, roi_y_max),
+            centers=centers,
+            pts3d=pts3d,
+            rvec_optimized=rvec_optimized,
+            tvec_optimized=tvec_optimized,
+            cMo=cMo_optimized,
+            inlier_mask=pnp_results['inlier_mask'],
+            frame_id_val=record['frame_id'],
+        )
+
+        return True
+
+    def run(self):
+        """Run pose estimation in online or offline mode."""
+        os.makedirs(self.result_dir, exist_ok=True)
+        
+        if self.data_source_mode == 'online':
+            self._run_online()
+        else:
+            self._run_offline()
+        
+        print(f"Completed. no_detection={self.cnt_no_detection}, less_7pts={self.cnt_less_7pts}, "
+              f"pnp_failed={self.cnt_pnp_failed}, rejected={self.cnt_rejected_frames}")
+        self._save_results()
+    
+    def _run_online(self):
+        """Run in online mode (real-time hardware acquisition)."""
+        print("Starting online pose estimation...")
+        
+        try:
+            # Start data acquisition threads
+            self.data_source.start_online()
+            
+            frame_id = 1
+            frame_skip_count = 0
+            
+            while True:
+                # Get synchronized frame and pose
+                img, robot_pose, sync_info, success = self.data_source.get_next_frame_pose()
+                
+                if not success:
+                    if img is None or robot_pose is None:
+                        time.sleep(0.001)  # Wait for data
+                        continue
                     else:
-                        color = (255, 255, 0)
-                    # Detected point: hollow circle with edge (green=inlier, red=outlier, yellow=unknown)
-                    cv2.circle(img, (int(x), int(y)), 3, color, 1)
-                    x_proj, y_proj = proj[i][0]
-                    # Projected point: cross marker (blue)
-                    cv2.drawMarker(img, (int(x_proj), int(y_proj)), (255, 0, 0), cv2.MARKER_CROSS, 5, 1)
-                    # Connection line
-                    cv2.line(img, (int(x), int(y)), (int(x_proj), int(y_proj)), (0, 255, 0), 1)
-                    # Point index label
-                    cv2.putText(img, str(i), (int(x)-8, int(y)-8),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+                        # Data not synchronized
+                        frame_skip_count += 1
+                        if frame_skip_count % 100 == 0:
+                            print(f"Skipping unsynchronized frames (diff={sync_info/1e6:.2f}ms)")
+                        continue
+                
+                # Reset skip counter on successful frame
+                frame_skip_count = 0
+                
+                # Process frame
+                timestamp_ns = int(time.perf_counter_ns())
+                if self._process_one_frame(img, robot_pose, frame_id, timestamp_ns):
+                    frame_id += 1
+                
+                # Check max frames limit
+                if self.max_frames > 0 and frame_id > self.max_frames:
+                    print(f"Reached max frames limit ({self.max_frames}), stopping...")
+                    break
+                
+                # Display current frame
+                cv2.imshow('pose_estimation', img)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    print("User interrupted")
+                    break
+                    
+        except KeyboardInterrupt:
+            print("Interrupted by user")
+        finally:
+            self.data_source.stop_online()
+    
+    def _run_offline(self):
+        """Run in offline mode (file-based)."""
+        print("Starting offline pose estimation...")
+        
+        # Use hardcoded offline path for now (can be made configurable)
+        data_dir = "dataset/0515"
+        if not os.path.exists(data_dir):
+            data_dir = self.data_dir
+        
+        img_files = sorted([f for f in os.listdir(data_dir) 
+                           if f.endswith('.jpg') and f != 'temp'])
+        npy_files = {f.replace('.npy', ''): f for f in os.listdir(data_dir) 
+                    if f.endswith('.npy')}
+        
+        frame_id = 1
+        processed_frames = 0
+        
+        for img_file in img_files:
+            ts = img_file.replace('_720.jpg', '')
+            
+            img_path = os.path.join(data_dir, img_file)
+            img = cv2.imread(img_path)
+            if img is None:
+                continue
+            
+            if f"{ts}" not in npy_files:
+                continue
+            
+            robot_pose_path = os.path.join(data_dir, npy_files[ts])
+            robot_pose = np.load(robot_pose_path)
+            
+            if self._process_one_frame(img, robot_pose, frame_id, timestamp_ns=0):
+                frame_id += 1
+                processed_frames += 1
+            
+            # Check max frames limit
+            if self.max_frames > 0 and processed_frames >= self.max_frames:
+                print(f"Reached max frames limit ({self.max_frames}), stopping...")
+                break
+            
+            # Display current frame
+            cv2.imshow('pose_estimation', img)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                print("User interrupted")
+                break
 
-            pad = 50
-            vis_result = img[roi_y_min-pad:roi_y_max+pad, roi_x_min-pad:roi_x_max+pad]
-            vis_result = cv2.resize(vis_result, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
-            vis_result_path = os.path.join(RESULT_DIR, f"frame_{frame_id_val:06d}_vis_result.png")
-            cv2.imwrite(vis_result_path, vis_result)
-            cv2.waitKey(1)
+    def _save_results(self):
 
-    cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
+        self._save_json_records()
+        self._save_csv_records()
+        self._save_plots()
+        self._print_summary()
 
-    # ============ 保存 JSON 记录 ============
-    frame_records_path = os.path.join(RESULT_DIR, "frame_records.json")
-    with open(frame_records_path, 'w') as f:
-        json.dump(frame_records, f, indent=2)
-    print(f"\nSaved frame_records to {frame_records_path}")
+    def _save_json_records(self):
+        frame_records_path = os.path.join(self.result_dir, "frame_records.json")
+        with open(frame_records_path, 'w') as f:
+            json.dump(self.frame_records, f, indent=2)
+        print(f"\nSaved frame_records to {frame_records_path}")
 
-    pnp_records_path = os.path.join(RESULT_DIR, "pnp_records.json")
-    with open(pnp_records_path, 'w') as f:
-        json.dump(pnp_records, f, indent=2)
-    print(f"Saved pnp_records to {pnp_records_path}")
+        pnp_records_path = os.path.join(self.result_dir, "pnp_records.json")
+        with open(pnp_records_path, 'w') as f:
+            json.dump(self.pnp_records, f, indent=2)
+        print(f"Saved pnp_records to {pnp_records_path}")
 
-    optimize_records_path = os.path.join(RESULT_DIR, "optimize_records.json")
-    with open(optimize_records_path, 'w') as f:
-        json.dump(optimize_records, f, indent=2)
-    print(f"Saved optimize_records to {optimize_records_path}")
+        optimize_records_path = os.path.join(self.result_dir, "optimize_records.json")
+        with open(optimize_records_path, 'w') as f:
+            json.dump(self.optimize_records, f, indent=2)
+        print(f"Saved optimize_records to {optimize_records_path}")
 
-    # ============ 保存 CSV 记录 ============
-    if pnp_records:
-        pnp_df = pd.DataFrame(pnp_records)
-        pnp_csv_path = os.path.join(RESULT_DIR, "pnp_results.csv")
-        pnp_df.to_csv(pnp_csv_path, index=False)
-        print(f"Saved pnp_results CSV to {pnp_csv_path}")
+    def _save_csv_records(self):
+        if self.pnp_records:
+            pnp_df = pd.DataFrame(self.pnp_records)
+            pnp_csv_path = os.path.join(self.result_dir, "pnp_results.csv")
+            pnp_df.to_csv(pnp_csv_path, index=False)
+            print(f"Saved pnp_results CSV to {pnp_csv_path}")
 
-    if optimize_records:
-        opt_df = pd.DataFrame(optimize_records)
-        opt_csv_path = os.path.join(RESULT_DIR, "optimize_results.csv")
-        opt_df.to_csv(opt_csv_path, index=False)
-        print(f"Saved optimize_results CSV to {opt_csv_path}")
+        if self.optimize_records:
+            opt_df = pd.DataFrame(self.optimize_records)
+            opt_csv_path = os.path.join(self.result_dir, "optimize_results.csv")
+            opt_df.to_csv(opt_csv_path, index=False)
+            print(f"Saved optimize_results CSV to {opt_csv_path}")
 
-    print("\n" + "=" * 80)
-    print("PnP Results Summary")
-    print("=" * 80)
-    print(f"{'FrameID':>8} {'Pts':>4} {'Inliers':>7} {'Thresh':>8} {'Rnd1Err':>8} {'PnPErr':>8} {'BAErr':>8}")
-    print("-" * 80)
-    for rec in pnp_records:
-        print(f"{rec['frame_id']:>8} {rec['n_points']:>4} {rec['n_inliers']:>7} "
-              f"{rec['used_threshold']:>8.3f} {rec['pnp_error_round1']:>8.4f} "
-              f"{rec['pnp_error_final']:>8.4f} {rec['pnp_error_ba']:>8.4f}")
-    print("-" * 80)
+    def _save_plots(self):
+        if not self.frame_records:
+            return
 
-    print("\n" + "=" * 120)
-    print("Optimization Results Summary")
-    print("=" * 120)
-    print(f"{'FrameID':>8} {'Frames':>6} {'bMo_t_x':>10} {'bMo_t_y':>10} {'bMo_t_z':>10} "
-          f"{'bMo_rx':>8} {'bMo_ry':>8} {'bMo_rz':>8} "
-          f"{'cMo_rx':>8} {'cMo_ry':>8} {'cMo_rz':>8} "
-          f"{'FrErr':>8} {'AvgErr':>8}")
-    print("-" * 120)
-    for rec in optimize_records:
-        print(f"{rec['frame_id']:>8} {rec['n_frames_in_optimizer']:>6} "
-              f"{rec['bMo_tvec'][0]:>10.2f} {rec['bMo_tvec'][1]:>10.2f} {rec['bMo_tvec'][2]:>10.2f} "
-              f"{rec['bMo_euler'][0]:>8.2f} {rec['bMo_euler'][1]:>8.2f} {rec['bMo_euler'][2]:>8.2f} "
-              f"{rec['cMo_euler'][0]:>8.2f} {rec['cMo_euler'][1]:>8.2f} {rec['cMo_euler'][2]:>8.2f} "
-              f"{rec['frame_error']:>8.4f} {rec['avg_error'] if rec['avg_error'] is not None else 0:>8.4f}")
-    print("=" * 120)
+        def unwrap_angles(angles):
+            angles = np.array(angles)
+            for i in range(1, len(angles)):
+                diff = angles[i] - angles[i-1]
+                if diff > 180:
+                    angles[i:] -= 360
+                elif diff < -180:
+                    angles[i:] += 360
+            return angles
 
-    # ============ 绘制各分量随Frame的变化 ============
-    def unwrap_angles(angles):
-        """ unwrap 角度, 避免 -180/180 跳变 """
-        angles = np.array(angles)
-        for i in range(1, len(angles)):
-            diff = angles[i] - angles[i-1]
-            if diff > 180:
-                angles[i:] -= 360
-            elif diff < -180:
-                angles[i:] += 360
-        return angles
+        self._save_translation_plots()
+        self._save_euler_plots(unwrap_angles)
+        self._save_error_plots()
 
-    if len(frame_records) > 0:
+    def _save_translation_plots(self):
         fig, axes = plt.subplots(3, 3, figsize=(15, 12))
         fig.suptitle('bMo, cMo, bMe Translation Components vs Frame', fontsize=14)
 
-        frames = [r['frame_id'] for r in frame_records]
+        frames = [r['frame_id'] for r in self.frame_records]
 
-        # bMo x, y, z (Optimized vs PnP)
         ax = axes[0, 0]
-        ax.plot(frames, [r['bMo_optimized'][0][3] for r in frame_records], 'r-', label='Optimized x')
-        ax.plot(frames, [r['bMo_init'][0][3] for r in frame_records], 'r--', label='PnP x', alpha=0.7)
+        ax.plot(frames, [r['bMo_optimized'][0][3] for r in self.frame_records], 'r-', label='Optimized x')
+        ax.plot(frames, [r['bMo_init'][0][3] for r in self.frame_records], 'r--', label='PnP x', alpha=0.7)
         ax.set_ylabel('X (mm)')
         ax.set_title('bMo X')
         ax.grid(True)
         ax.legend()
 
         ax = axes[0, 1]
-        ax.plot(frames, [r['bMo_optimized'][1][3] for r in frame_records], 'g-', label='Optimized y')
-        ax.plot(frames, [r['bMo_init'][1][3] for r in frame_records], 'g--', label='PnP y', alpha=0.7)
+        ax.plot(frames, [r['bMo_optimized'][1][3] for r in self.frame_records], 'g-', label='Optimized y')
+        ax.plot(frames, [r['bMo_init'][1][3] for r in self.frame_records], 'g--', label='PnP y', alpha=0.7)
         ax.set_ylabel('Y (mm)')
         ax.set_title('bMo Y')
         ax.grid(True)
         ax.legend()
 
         ax = axes[0, 2]
-        ax.plot(frames, [r['bMo_optimized'][2][3] for r in frame_records], 'b-', label='Optimized z')
-        ax.plot(frames, [r['bMo_init'][2][3] for r in frame_records], 'b--', label='PnP z', alpha=0.7)
+        ax.plot(frames, [r['bMo_optimized'][2][3] for r in self.frame_records], 'b-', label='Optimized z')
+        ax.plot(frames, [r['bMo_init'][2][3] for r in self.frame_records], 'b--', label='PnP z', alpha=0.7)
         ax.set_ylabel('Z (mm)')
         ax.set_title('bMo Z')
         ax.grid(True)
         ax.legend()
 
-        # cMo x, y, z (Optimized vs PnP)
         ax = axes[1, 0]
-        ax.plot(frames, [r['cMo_optimized'][0][3] for r in frame_records], 'r-', label='Optimized x')
-        ax.plot(frames, [r['cMo'][0][3] for r in frame_records], 'r--', label='PnP x', alpha=0.7)
+        ax.plot(frames, [r['cMo_optimized'][0][3] for r in self.frame_records], 'r-', label='Optimized x')
+        ax.plot(frames, [r['cMo'][0][3] for r in self.frame_records], 'r--', label='PnP x', alpha=0.7)
         ax.set_ylabel('X (mm)')
         ax.set_title('cMo X')
         ax.grid(True)
         ax.legend()
 
         ax = axes[1, 1]
-        ax.plot(frames, [r['cMo_optimized'][1][3] for r in frame_records], 'g-', label='Optimized y')
-        ax.plot(frames, [r['cMo'][1][3] for r in frame_records], 'g--', label='PnP y', alpha=0.7)
+        ax.plot(frames, [r['cMo_optimized'][1][3] for r in self.frame_records], 'g-', label='Optimized y')
+        ax.plot(frames, [r['cMo'][1][3] for r in self.frame_records], 'g--', label='PnP y', alpha=0.7)
         ax.set_ylabel('Y (mm)')
         ax.set_title('cMo Y')
         ax.grid(True)
         ax.legend()
 
         ax = axes[1, 2]
-        ax.plot(frames, [r['cMo_optimized'][2][3] for r in frame_records], 'b-', label='Optimized z')
-        ax.plot(frames, [r['cMo'][2][3] for r in frame_records], 'b--', label='PnP z', alpha=0.7)
+        ax.plot(frames, [r['cMo_optimized'][2][3] for r in self.frame_records], 'b-', label='Optimized z')
+        ax.plot(frames, [r['cMo'][2][3] for r in self.frame_records], 'b--', label='PnP z', alpha=0.7)
         ax.set_ylabel('Z (mm)')
         ax.set_title('cMo Z')
         ax.grid(True)
         ax.legend()
 
-        # bMe x, y, z (robot_pose)
         ax = axes[2, 0]
-        ax.plot(frames, [r['robot_pose'][0][3] for r in frame_records], 'r-', label='x')
+        ax.plot(frames, [r['robot_pose'][0][3] for r in self.frame_records], 'r-', label='x')
         ax.set_xlabel('Frame ID')
         ax.set_ylabel('X (mm)')
         ax.set_title('bMe X')
@@ -612,7 +1221,7 @@ if __name__ == '__main__':
         ax.legend()
 
         ax = axes[2, 1]
-        ax.plot(frames, [r['robot_pose'][1][3] for r in frame_records], 'g-', label='y')
+        ax.plot(frames, [r['robot_pose'][1][3] for r in self.frame_records], 'g-', label='y')
         ax.set_xlabel('Frame ID')
         ax.set_ylabel('Y (mm)')
         ax.set_title('bMe Y')
@@ -620,7 +1229,7 @@ if __name__ == '__main__':
         ax.legend()
 
         ax = axes[2, 2]
-        ax.plot(frames, [r['robot_pose'][2][3] for r in frame_records], 'b-', label='z')
+        ax.plot(frames, [r['robot_pose'][2][3] for r in self.frame_records], 'b-', label='z')
         ax.set_xlabel('Frame ID')
         ax.set_ylabel('Z (mm)')
         ax.set_title('bMe Z')
@@ -628,24 +1237,21 @@ if __name__ == '__main__':
         ax.legend()
 
         plt.tight_layout()
-        pose_plot_path = os.path.join(RESULT_DIR, "pose_components_vs_frame.png")
+        pose_plot_path = os.path.join(self.result_dir, "pose_components_vs_frame.png")
         plt.savefig(pose_plot_path, dpi=150)
         print(f"Saved pose plot to {pose_plot_path}")
         plt.close()
 
-    # ============ 绘制欧拉角随Frame的变化 ============
-    if len(frame_records) > 0:
-        frames = [r['frame_id'] for r in frame_records]
+    def _save_euler_plots(self, unwrap_angles):
+        frames = [r['frame_id'] for r in self.frame_records]
 
-        # bMo 欧拉角 (optimized)
-        bMo_euler_x = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][0] for r in frame_records]
-        bMo_euler_y = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][1] for r in frame_records]
-        bMo_euler_z = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][2] for r in frame_records]
+        bMo_euler_x = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][0] for r in self.frame_records]
+        bMo_euler_y = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][1] for r in self.frame_records]
+        bMo_euler_z = [pose_to_euler_tvec(np.array(r['bMo_optimized']))[0][2] for r in self.frame_records]
 
-        # bMo 欧拉角 (PnP)
-        bMo_pnp_euler_x = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][0] for r in frame_records]
-        bMo_pnp_euler_y = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][1] for r in frame_records]
-        bMo_pnp_euler_z = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][2] for r in frame_records]
+        bMo_pnp_euler_x = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][0] for r in self.frame_records]
+        bMo_pnp_euler_y = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][1] for r in self.frame_records]
+        bMo_pnp_euler_z = [pose_to_euler_tvec(np.array(r['bMo_init']))[0][2] for r in self.frame_records]
 
         fig, axes = plt.subplots(3, 1, figsize=(12, 10))
         fig.suptitle('bMo Euler Angles (xyz) vs Frame', fontsize=14)
@@ -676,20 +1282,18 @@ if __name__ == '__main__':
         ax.legend()
 
         plt.tight_layout()
-        bmo_euler_path = os.path.join(RESULT_DIR, "bmo_euler_vs_frame.png")
+        bmo_euler_path = os.path.join(self.result_dir, "bmo_euler_vs_frame.png")
         plt.savefig(bmo_euler_path, dpi=150)
         print(f"Saved bMo euler plot to {bmo_euler_path}")
         plt.close()
 
-        # cMo 欧拉角 (optimized)
-        cMo_euler_x = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][0] for r in frame_records]
-        cMo_euler_y = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][1] for r in frame_records]
-        cMo_euler_z = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][2] for r in frame_records]
+        cMo_euler_x = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][0] for r in self.frame_records]
+        cMo_euler_y = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][1] for r in self.frame_records]
+        cMo_euler_z = [pose_to_euler_tvec(np.array(r['cMo_optimized']))[0][2] for r in self.frame_records]
 
-        # cMo 欧拉角 (PnP)
-        cMo_pnp_euler_x = [pose_to_euler_tvec(np.array(r['cMo']))[0][0] for r in frame_records]
-        cMo_pnp_euler_y = [pose_to_euler_tvec(np.array(r['cMo']))[0][1] for r in frame_records]
-        cMo_pnp_euler_z = [pose_to_euler_tvec(np.array(r['cMo']))[0][2] for r in frame_records]
+        cMo_pnp_euler_x = [pose_to_euler_tvec(np.array(r['cMo']))[0][0] for r in self.frame_records]
+        cMo_pnp_euler_y = [pose_to_euler_tvec(np.array(r['cMo']))[0][1] for r in self.frame_records]
+        cMo_pnp_euler_z = [pose_to_euler_tvec(np.array(r['cMo']))[0][2] for r in self.frame_records]
 
         fig, axes = plt.subplots(3, 1, figsize=(12, 10))
         fig.suptitle('cMo Euler Angles (xyz) vs Frame', fontsize=14)
@@ -720,31 +1324,32 @@ if __name__ == '__main__':
         ax.legend()
 
         plt.tight_layout()
-        cmo_euler_path = os.path.join(RESULT_DIR, "cmo_euler_vs_frame.png")
+        cmo_euler_path = os.path.join(self.result_dir, "cmo_euler_vs_frame.png")
         plt.savefig(cmo_euler_path, dpi=150)
         print(f"Saved cMo euler plot to {cmo_euler_path}")
         plt.close()
 
-    # ============ 绘制误差随Frame的变化 ============
-    if len(pnp_records) > 0:
+    def _save_error_plots(self):
+        if not self.pnp_records or not self.optimize_records:
+            return
+
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
         fig.suptitle('Reprojection Error vs Frame', fontsize=14)
 
-        frames = [r['frame_id'] for r in pnp_records]
-
+        frames = [r['frame_id'] for r in self.pnp_records]
         ax = axes[0]
-        ax.plot(frames, [r['pnp_error_round1'] for r in pnp_records], 'b-', label='Round1', marker='o')
-        ax.plot(frames, [r['pnp_error_final'] for r in pnp_records], 'g-', label='Final', marker='s')
+        ax.plot(frames, [r['pnp_error_round1'] for r in self.pnp_records], 'b-', label='Round1', marker='o')
+        ax.plot(frames, [r['pnp_error_final'] for r in self.pnp_records], 'g-', label='Final', marker='s')
         ax.set_xlabel('Frame ID')
         ax.set_ylabel('Error (px)')
         ax.set_title('PnP Error')
         ax.legend()
         ax.grid(True)
 
+        opt_frames = [r['frame_id'] for r in self.optimize_records]
         ax = axes[1]
-        opt_frames = [r['frame_id'] for r in optimize_records]
-        ax.plot(opt_frames, [r['frame_error'] for r in optimize_records], 'b-', label='Frame Error', marker='o')
-        ax.plot(opt_frames, [r['avg_error'] for r in optimize_records if r['avg_error'] is not None], 'g-', label='Avg Error', marker='s')
+        ax.plot(opt_frames, [r['frame_error'] for r in self.optimize_records], 'b-', label='Frame Error', marker='o')
+        ax.plot(opt_frames, [r['avg_error'] for r in self.optimize_records if r['avg_error'] is not None], 'g-', label='Avg Error', marker='s')
         ax.set_xlabel('Frame ID')
         ax.set_ylabel('Error (px)')
         ax.set_title('Optimization Error')
@@ -752,12 +1357,60 @@ if __name__ == '__main__':
         ax.grid(True)
 
         plt.tight_layout()
-        error_plot_path = os.path.join(RESULT_DIR, "error_vs_frame.png")
+        error_plot_path = os.path.join(self.result_dir, "error_vs_frame.png")
         plt.savefig(error_plot_path, dpi=150)
         print(f"Saved error plot to {error_plot_path}")
         plt.close()
 
-    print("\n" + "=" * 80)
-    print(f"No Dectation:{cnt_no_detection}, Less 7pts:{cnt_less_7pts}, PnP Failed:{cnt_pnp_failed}, Large_Pose_Diff_Rejected:{cnt_rejected_frames}")
-    print("All results saved successfully!")
-    print("=" * 80)
+    def _print_summary(self):
+        print("\n" + "=" * 80)
+        print("PnP Results Summary")
+        print("=" * 80)
+        print(f"{'FrameID':>8} {'Pts':>4} {'Inliers':>7} {'Thresh':>8} {'Rnd1Err':>8} {'PnPErr':>8} {'BAErr':>8}")
+        print("-" * 80)
+        for rec in self.pnp_records:
+            print(f"{rec['frame_id']:>8} {rec['n_points']:>4} {rec['n_inliers']:>7} "
+                  f"{rec['used_threshold']:>8.3f} {rec['pnp_error_round1']:>8.4f} "
+                  f"{rec['pnp_error_final']:>8.4f} {rec['pnp_error_ba']:>8.4f}")
+        print("-" * 80)
+
+        print("\n" + "=" * 120)
+        print("Optimization Results Summary")
+        print("=" * 120)
+        print(f"{'FrameID':>8} {'Frames':>6} {'bMo_t_x':>10} {'bMo_t_y':>10} {'bMo_t_z':>10} "
+              f"{'bMo_rx':>8} {'bMo_ry':>8} {'bMo_rz':>8} "
+              f"{'cMo_rx':>8} {'cMo_ry':>8} {'cMo_rz':>8} "
+              f"{'FrErr':>8} {'AvgErr':>8}")
+        print("-" * 120)
+        for rec in self.optimize_records:
+            print(f"{rec['frame_id']:>8} {rec['n_frames_in_optimizer']:>6} "
+                  f"{rec['bMo_tvec'][0]:>10.2f} {rec['bMo_tvec'][1]:>10.2f} {rec['bMo_tvec'][2]:>10.2f} "
+                  f"{rec['bMo_euler'][0]:>8.2f} {rec['bMo_euler'][1]:>8.2f} {rec['bMo_euler'][2]:>8.2f} "
+                  f"{rec['cMo_euler'][0]:>8.2f} {rec['cMo_euler'][1]:>8.2f} {rec['cMo_euler'][2]:>8.2f} "
+                  f"{rec['frame_error']:>8.4f} {rec['avg_error'] if rec['avg_error'] is not None else 0:>8.4f}")
+        print("=" * 120)
+        print(f"No Detection:{self.cnt_no_detection}, Less 7pts:{self.cnt_less_7pts}, PnP Failed:{self.cnt_pnp_failed}, Large_Pose_Diff_Rejected:{self.cnt_rejected_frames}")
+        print("All results saved successfully!")
+        print("=" * 80)
+
+    def _should_reject_pose_diff(self, cMo, robot_pose):
+        if self.last_bMo is None or not self.optimizer.is_initialized():
+            return False
+
+        cMo_before = np.linalg.inv(eMc) @ np.linalg.inv(robot_pose) @ self.last_bMo
+        tvec_before = cMo_before[:3, 3]
+        pos_diff = float(np.linalg.norm(cMo[:3, 3] - tvec_before))
+
+        rot_mat_diff = cMo[:3, :3] @ cMo_before[:3, :3].T
+        rot_vec_diff = Rotation.from_matrix(rot_mat_diff).as_rotvec()
+        rot_diff = float(np.degrees(np.linalg.norm(rot_vec_diff)))
+
+        if pos_diff > self.max_translation or rot_diff > self.max_rotation_deg:
+            print(f"  [REJECT] Large pose difference: pos_diff={pos_diff:.1f}mm, rot_diff={rot_diff:.1f}deg")
+            return True
+        return False
+
+
+if __name__ == '__main__':
+    estimator = ChargeportPoseEstimator()
+    estimator.run()
