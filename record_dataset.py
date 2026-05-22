@@ -123,8 +123,8 @@ def main():
     # 创建输出目录
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_dir = os.path.join(OUTPUT_DIR, timestamp)
-    img_dir = os.path.join(session_dir, "images")
-    os.makedirs(img_dir, exist_ok=True)
+    data_dir = os.path.join(session_dir, "data")
+    os.makedirs(data_dir, exist_ok=True)
     print(f"[Recording] Output: {session_dir}")
 
     # 连接机械臂
@@ -184,14 +184,17 @@ def main():
                 continue
 
             # 保存图像
-            img_path = os.path.join(img_dir, f"frame_{frame_count:06d}.jpg")
+            img_path = os.path.join(data_dir, f"{frame_count:06d}.jpg")
             cv2.imwrite(img_path, frame)
 
+            # 保存位姿为 .npy
+            pose_path = os.path.join(data_dir, f"{frame_count:06d}.npy")
+            np.save(pose_path, pose)
             # 保存元数据
             euler, tvec = euler_from_pose(pose)
             meta = {
                 "frame_id": frame_count,
-                "image_path": f"images/frame_{frame_count:06d}.jpg",
+                "image_path": f"data/{frame_count:06d}.jpg",
                 "camera_timestamp_ns": int(frame_ts) if frame_ts is not None else 0,
                 "pose_timestamp_ns": int(pose_ts) if pose_ts is not None else 0,
                 "time_diff_ns": int(diff_ns),
