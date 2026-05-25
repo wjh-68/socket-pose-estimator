@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import threading
 import time
 from static_pose_optimizer_ba import StaticPoseOptimizer, pose_to_euler_tvec
-from gemiEd import UltimateSocketMatcher, getInferResult
+from gemiEd import UltimateSocketMatcher
+from trt_pose_inf import YOLOTRTposeInference, getInferResults
 import pycylinderedsf as pyced
 
 # ============ Config ============
@@ -434,7 +435,7 @@ class ChargeportPoseEstimator:
         data_dir=DATA_DIR,
         result_dir=RESULT_DIR,
         save_dir=SAVE_DIR,
-        model_path='checkpoint/best.pt',
+        engine_path='checkpoint/best.engine',
         sliding_window_size=SLIDING_WINDOW_SIZE,
         max_frames=MAX_FRAMES,
         begin_frame_id=BEGIN_FRAME_ID,
@@ -467,7 +468,16 @@ class ChargeportPoseEstimator:
         self.max_translation = max_translation
         self.max_rotation_deg = max_rotation_deg
 
-        self.model = YOLO(model_path)
+        class_names = ["object"]  
+        conf_th = 0.5
+        iou_th = 0.45
+        num_keypoints = 7
+        self.model = YOLOTRTposeInference(
+            engine_path,
+            class_names=class_names,
+            num_keypoints=num_keypoints,
+            conf_threshold=conf_th,
+            iou_threshold=iou_th,)
 
         self.optimizer = StaticPoseOptimizer(K, dist, prior_sigma=PRIOR_SIGMA, point_sigmas=POINT_SIGMAS)
         self.optimizer.set_extrinsics(eMc)
@@ -536,7 +546,7 @@ class ChargeportPoseEstimator:
 
     def _detect_socket(self, img):
         img_bright = np.clip(img.astype(np.float32) - 50, 0, 255).astype(np.uint8)
-        infer_result = getInferResult(self.model, img_bright)
+        infer_result = getInferResults(self.model, img_bright)
         if not infer_result or len(infer_result) != 2:
             return None, None
 
