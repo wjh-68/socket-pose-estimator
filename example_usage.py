@@ -140,7 +140,8 @@ def main():
     args = parser.parse_args()
     
     print("\n")
-    
+    import time
+    t0 = time.perf_counter_ns()
     if args.mode == 'offline':
         success = run_offline_example()
     elif args.mode == 'online':
@@ -153,6 +154,8 @@ def main():
         success = False
     
     print("\n")
+    duration = (time.perf_counter_ns() - t0)*1e-6
+    print(f"总耗时: {duration:.1f} ms")
     return 0 if success else 1
 
 

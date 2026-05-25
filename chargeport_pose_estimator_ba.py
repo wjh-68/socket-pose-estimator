@@ -554,7 +554,9 @@ class ChargeportPoseEstimator:
         if boxes is None or len(boxes) == 0:
             return None, None
 
-        return boxes, keypoints
+        # 返回所有 boxes，但只返回首个检测的 keypoints（当前流程使用第一个检测）
+        first_kps = keypoints[0] if isinstance(keypoints, np.ndarray) and keypoints.size != 0 else None
+        return boxes, first_kps
 
     def _extract_roi(self, img, box):
         x0, y0, x1, y1 = map(int, box[:4])
@@ -1007,12 +1009,13 @@ class ChargeportPoseEstimator:
     def run(self):
         """Run pose estimation in online or offline mode."""
         os.makedirs(self.result_dir, exist_ok=True)
-        
+        t0= time.perf_counter_ns()
         if self.data_source_mode == 'online':
             self._run_online()
         else:
             self._run_offline()
-        
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"process all frames cost: {duration:.1f} ms")
         print(f"Completed. no_detection={self.cnt_no_detection}, less_7pts={self.cnt_less_7pts}, "
               f"pnp_failed={self.cnt_pnp_failed}, rejected={self.cnt_rejected_frames}")
         self._save_results()

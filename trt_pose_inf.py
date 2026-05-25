@@ -269,13 +269,35 @@ def getInferResults(model, image):
     # 遍历字典列表，分别提取 box 和 keypoints
     boxes_list = []
     keypoints_list = []
-    
+
     for res in results:
-        boxes_list.append(res["box"]) 
-        keypoints_list.append(res["keypoints"]) 
-    
-    
-    return np.array(boxes_list), np.array(keypoints_list)
+        boxes_list.append(res["box"])
+
+        kp = np.array(res.get("keypoints", []))
+        if kp.size == 0:
+            keypoints_list.append(np.empty((0, 2), dtype=np.float32))
+            continue
+
+        # 如果 keypoints 包含额外通道（例如 (x,y,v)），只保留前两列 (x,y)
+        if kp.ndim == 2 and kp.shape[1] >= 2:
+            kp_xy = kp[:, :2].astype(np.float32)
+        else:
+            # 展平或其他异常情况，尝试重塑为 (N,2)
+            kp_flat = kp.flatten()
+            if kp_flat.size % 2 == 0:
+                kp_xy = kp_flat.reshape(-1, 2).astype(np.float32)
+            else:
+                kp_xy = kp_flat[: (kp_flat.size // 2) * 2].reshape(-1, 2).astype(np.float32)
+
+        keypoints_list.append(kp_xy)
+
+    # 尝试将 keypoints_list 堆叠为 (N, K, 2) 的数值数组，若失败则退回到 object 数组
+    try:
+        keypoints_array = np.stack(keypoints_list, axis=0).astype(np.float32)
+    except Exception:
+        keypoints_array = np.array(keypoints_list, dtype=object)
+
+    return np.array(boxes_list), keypoints_array
 
 
 def parse_args():
