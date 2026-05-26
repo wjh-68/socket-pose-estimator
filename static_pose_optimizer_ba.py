@@ -139,8 +139,10 @@ class StaticPoseOptimizer:
 
         frame = {
             'robot_pose': robot_pose,
+            'eMb': np.linalg.inv(robot_pose),
             'pts2d': pts2d,
             'pts3d': pts3d,
+            'n_points': len(pts2d),
             'index': frame_index,
             'per_point_errors_pnp': per_point_errors_pnp  # For dynamic weighting
         }
@@ -558,6 +560,7 @@ class _StaticPoseOptimizerFunctor:
                  loss, loss_scale, dynamic_alpha, max_dynamic_error, gross_outlier_threshold):
         self.frames = frames
         self.eMc = np.array(eMc, dtype=np.float64)
+        self.eMc_inv = np.linalg.inv(self.eMc)
         self.prior_sigma = np.array(prior_sigma, dtype=np.float64)
         self.point_sigmas = point_sigmas  # shape (N,), per-point base uncertainty (pixels)
         self.loss = loss
@@ -586,55 +589,40 @@ class _StaticPoseOptimizerFunctor:
 
         for frame_index, frame in enumerate(self.frames):
             bMe = frame['robot_pose']
-            eMb = np.linalg.inv(bMe)
-            eMc_inv = np.linalg.inv(self.eMc)
-            cMo_nominal = eMc_inv @ eMb @ bMo
+            eMb = frame['eMb']
+            cMo_nominal = self.eMc_inv @ eMb @ bMo
             delta = params[6 + 6 * frame_index: 6 + 6 * (frame_index + 1)]
             cMo = StaticPoseOptimizer.apply_perturbation(cMo_nominal, delta)
 
             proj = self._project(frame['pts3d'], cMo[:3, :3], cMo[:3, 3])
-            
-            # Compute reprojection error
             err = proj - frame['pts2d']  # shape (N, 2)
-            
-            # Get per-point PnP errors from frame data (for dynamic weighting)
+
             per_point_errors_pnp = frame.get('per_point_errors_pnp')
-            
-            # Compute effective sigma with dynamic weighting
-            effective_sigmas = self.point_sigmas.copy() if self.point_sigmas is not None else np.ones(len(frame['pts3d']))
-            
-            if per_point_errors_pnp is not None:
-                # Dynamic weighting: effective_sigma_i = base_sigma_i * (1.0 + alpha * clipped_error_i)
-                for i, pnp_error in enumerate(per_point_errors_pnp):
-                    # Hard reject: gross outliers (> threshold)
-                    if pnp_error > self.gross_outlier_threshold:
-                        self.gross_outlier_count += 1
-                        # Mark this point as invalid by setting very high sigma (nearly zero weight)
-                        effective_sigmas[i] = 1e6  # Very high sigma = very low weight
-                    else:
-                        # Soft weighting: increase sigma based on error
-                        clipped_error = np.clip(pnp_error, 0, self.max_dynamic_error)
-                        dynamic_factor = 1.0 + self.dynamic_alpha * clipped_error
-                        effective_sigmas[i] = self.point_sigmas[i] * dynamic_factor
-                        self.dynamic_factors.append((frame_index, i, float(dynamic_factor)))
-            
-            # Apply per-point whitening with effective sigma
-            # err shape: (N, 2), effective_sigmas shape: (N,)
-            if effective_sigmas is not None:
-                if len(frame['pts3d']) != len(effective_sigmas):
-                    raise ValueError(
-                        f"effective_sigmas length {len(effective_sigmas)} does not match "
-                        f"frame pts3d length {len(frame['pts3d'])}"
-                    )
-                whitened_err = err / effective_sigmas[:, np.newaxis]
+            n_points = frame['n_points']
+
+            if self.point_sigmas is not None:
+                effective_sigmas = self.point_sigmas.copy()
             else:
-                whitened_err = err
-            
-            # Flatten and add to residuals
-            residuals.extend(whitened_err.flatten())
-            
-            # Add prior penalty on perturbation delta
-            residuals.extend((delta / self.prior_sigma).flatten())
+                effective_sigmas = np.ones(n_points, dtype=np.float64)
+
+            if per_point_errors_pnp is not None:
+                pnp_err = np.clip(per_point_errors_pnp, 0.0, self.max_dynamic_error)
+                dynamic_factors = 1.0 + self.dynamic_alpha * pnp_err
+                effective_sigmas *= dynamic_factors
+                gross_mask = pnp_err > self.gross_outlier_threshold
+                self.gross_outlier_count += int(np.count_nonzero(gross_mask))
+                effective_sigmas[gross_mask] = 1e6
+                self.dynamic_factors.extend(
+                    [(frame_index, i, float(dynamic_factors[i])) for i in range(n_points)]
+                )
+
+            whitened_err = err / effective_sigmas[:, np.newaxis]
+            residuals.append(whitened_err.ravel())
+            residuals.append((delta / self.prior_sigma).ravel())
+
+        if residuals:
+            return np.concatenate(residuals).astype(np.float64)
+        return np.zeros(0, dtype=np.float64)
 
         return np.array(residuals, dtype=np.float64)
 
