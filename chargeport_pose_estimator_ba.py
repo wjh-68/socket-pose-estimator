@@ -49,6 +49,9 @@ ADAPTIVE_MULTIPLIER = 2.0      # threshold = median_error * multiplier
 MAX_TRANSLATION = 20    # mm
 MAX_ROTATION_DEG = 20
 
+# enable multi thread eplis detection
+ENABLE_MT = True
+
 # Camera on robot end-effector (eye-to-hand extrinsic)
 eMc=np.array(
 [[-7.2849429e-01,  6.8505180e-01, -3.0797155e-04, -6.3927837e+01],
@@ -589,16 +592,64 @@ class ChargeportPoseEstimator:
         rot_rects = detector.getEllipsesAfterCluster()
         return [(*e.center, e.size[0] / 2, e.size[1] / 2, e.angle) for e in rot_rects]
 
+    def _match_socket_mt(self, keypoints, image_full):
+        from concurrent.futures import ThreadPoolExecutor
+        from gemiEd_mt import process_keypoint
+
+        t0 = time.perf_counter_ns()
+        matcher = UltimateSocketMatcher(True)
+
+        rect_s = np.linalg.norm(keypoints[1]-keypoints[0])
+        rect_l = np.linalg.norm(keypoints[6]-keypoints[5])
+        candidates = [None]*7
+        imgs = []
+        tls = []
+        for i,keypoint in enumerate(keypoints):
+            wh = rect_l
+            if i<2:
+                wh = rect_s
+            tl = (keypoint - wh/2).astype(np.int32)
+            br = (keypoint + wh/2).astype(np.int32)
+            wh = br-tl
+            # cv2.imshow('roi',image[tl[1]:br[1],tl[0]:br[0]])
+            # cv2.waitKey(0)
+            img = image_full[tl[1]:br[1],tl[0]:br[0]]
+            tls.append(tl)
+            imgs.append(np.ascontiguousarray(img))
+
+        args_list = [
+            (i, img,tl)
+            for i, (img,tl) in enumerate(zip(imgs,tls))]
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"prepare match data: {duration:.1f} ms")
+
+        t0 = time.perf_counter_ns()
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = executor.map(process_keypoint, args_list)
+        for i, candidate in results:
+            candidates[i] = candidate
+        centers = np.array([cand['p'] for cand in candidates])
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"mt detect ellipses: {duration:.1f} ms")
+        return None, None, centers, matcher
+
     def _match_socket(self, box, keypoints, roi_top_left, roi):
+        t0 = time.perf_counter_ns()
         normalized_keypoints = self._normalize_keypoints(keypoints, roi_top_left)
         ellipses = self._detect_ellipses(roi)
         if len(ellipses) == 0:
             print("  No ellipses detected in ROI, skipping")
             return None
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"detect ellipses: {duration:.1f} ms")
 
+        t0 = time.perf_counter_ns()
         matcher = self._create_matcher()
         box_xywh = [*(box[:2]), *(box[2:] - box[:2])]
         final_pts, status, centers = matcher.solve(ellipses, box_xywh, keypoints=normalized_keypoints)
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"match: {duration:.1f} ms")
+
         if final_pts is None or len(final_pts) == 0:
             print("  Matcher failed to find valid correspondences, skipping")
             return None
@@ -618,6 +669,7 @@ class ChargeportPoseEstimator:
         }
 
     def _prepare_optimizer(self, frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp, bMo_init):
+        t0 = time.perf_counter_ns()
         if not self.optimizer.is_initialized():
             self.optimizer.set_initial_pose(bMo_init)
 
@@ -625,7 +677,13 @@ class ChargeportPoseEstimator:
             self.optimizer.remove_oldest_frame()
 
         self.optimizer.add_frame(frame_id, robot_pose, pts2d, pts3d, per_point_errors_pnp=per_point_errors_pnp)
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"add and remove frames: {duration:.1f} ms")
+
+        t0 = time.perf_counter_ns()
         self.optimizer.optimize()
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"optimize(): {duration:.1f} ms")
 
         bMo_optimized = self.optimizer.get_pose()
         self.last_bMo = bMo_optimized
@@ -752,6 +810,7 @@ class ChargeportPoseEstimator:
         cv2.imwrite(vis_result_path, vis_result)
 
     def _process_one_frame(self, img, robot_pose, frame_id, timestamp_ns):
+        t0 = time.perf_counter_ns()
         if img is None:
             print("  Invalid image, skipping")
             return False
@@ -763,20 +822,30 @@ class ChargeportPoseEstimator:
             return False
 
         roi, roi_x_min, roi_y_min, roi_x_max, roi_y_max = self._extract_roi(img, boxes[0])
-        match_result = self._match_socket(boxes[0], keypoints, (roi_x_min, roi_y_min), roi)
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"infer: {duration:.1f} ms")
+
+        if ENABLE_MT:
+            match_result = self._match_socket_mt(keypoints,img)
+        else:
+            match_result = self._match_socket(boxes[0], keypoints, (roi_x_min, roi_y_min), roi)
         if match_result is None:
             print('find 0 points')
             return False
 
-        final_pts, status, centers, matcher = match_result
+        _, _, centers, matcher = match_result
+        if centers is None:
+            print("centers is none")
+            return False
         if centers.shape[0] < 7:
             self.cnt_less_7pts += 1
-            print(f'find {len(final_pts)} points, less than 7')
+            print(f'find {centers.shape[0]} points, less than 7')
             return False
 
         pts3d = matcher.obj_pts
         pts2d = centers
 
+        t0 = time.perf_counter_ns()
         pnp_results = self._compute_pnp_results(pts2d, pts3d)
         if not pnp_results['valid']:
             self.cnt_pnp_failed += 1
@@ -797,6 +866,10 @@ class ChargeportPoseEstimator:
             return False
 
         bMo_init = robot_pose @ eMc @ cMo
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"init and filter frames: {duration:.1f} ms")
+
+        t0 = time.perf_counter_ns()
         bMo_optimized, cMo_optimized = self._prepare_optimizer(
             frame_id,
             robot_pose,
@@ -805,7 +878,10 @@ class ChargeportPoseEstimator:
             pnp_results['per_point_errors'],
             bMo_init,
         )
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"total optimization: {duration:.1f} ms")
 
+        t0 = time.perf_counter_ns()
         rvec_optimized = Rotation.from_matrix(cMo_optimized[:3, :3]).as_rotvec()
         tvec_optimized = cMo_optimized[:3, 3]
 
@@ -863,7 +939,10 @@ class ChargeportPoseEstimator:
             cMo_euler=cMo_euler,
             cMo_tvec=cMo_tvec,
         )
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"print and record: {duration:.1f} ms")
 
+        t0 = time.perf_counter_ns()
         self._render_frame(
             img=img,
             roi_bounds=(roi_x_min, roi_y_min, roi_x_max, roi_y_max),
@@ -875,6 +954,8 @@ class ChargeportPoseEstimator:
             inlier_mask=pnp_results['inlier_mask'],
             frame_id_val=frame_id,
         )
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"visualization: {duration:.1f} ms")
 
         return True
 
@@ -1075,6 +1156,7 @@ class ChargeportPoseEstimator:
         print("Starting offline pose estimation...")
         
         # Use hardcoded offline path for now (can be made configurable)
+        t0 = time.perf_counter_ns()
         data_dir = "dataset/0515"
         if not os.path.exists(data_dir):
             data_dir = self.data_dir
@@ -1083,11 +1165,13 @@ class ChargeportPoseEstimator:
                            if f.endswith('.jpg') and f != 'temp'])
         npy_files = {f.replace('.npy', ''): f for f in os.listdir(data_dir) 
                     if f.endswith('.npy')}
-        
+        duration = (time.perf_counter_ns()-t0)*1e-6
+        print(f"sort files: {duration:.1f} ms")
         frame_id = 1
         processed_frames = 0
         
         for img_file in img_files:
+            t0 = time.perf_counter_ns()
             ts = img_file.replace('_720.jpg', '')
             
             img_path = os.path.join(data_dir, img_file)
@@ -1100,7 +1184,9 @@ class ChargeportPoseEstimator:
             
             robot_pose_path = os.path.join(data_dir, npy_files[ts])
             robot_pose = np.load(robot_pose_path)
-            
+            duration = (time.perf_counter_ns()-t0)*1e-6
+            print(f"read files: {duration:.1f} ms")
+
             if self._process_one_frame(img, robot_pose, frame_id, timestamp_ns=0):
                 frame_id += 1
                 processed_frames += 1
@@ -1111,10 +1197,14 @@ class ChargeportPoseEstimator:
                 break
             
             # Display current frame
+            t0 = time.perf_counter_ns()
             cv2.imshow('pose_estimation', img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("User interrupted")
                 break
+            duration = (time.perf_counter_ns()-t0)*1e-6
+            print(f"display img: {duration:.1f} ms")
+            print("-" * 50)
 
     def _save_results(self):
 
