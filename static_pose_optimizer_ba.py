@@ -624,8 +624,6 @@ class _StaticPoseOptimizerFunctor:
             return np.concatenate(residuals).astype(np.float64)
         return np.zeros(0, dtype=np.float64)
 
-        return np.array(residuals, dtype=np.float64)
-
     def _project(self, pts3d, R, tvec):
         pts3d = np.array(pts3d, dtype=np.float64)
         pts_cam = R @ pts3d.T + np.array(tvec, dtype=np.float64).reshape(3, 1)
