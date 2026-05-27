@@ -1,0 +1,57 @@
+mode: offline
+
+# only for offline mode
+dataset:
+  path: dataset/0515
+  read_nums: 10
+  parse_timestamp: true
+
+detector:
+  engine_path: checkpoint/best.engine
+  num_keypoints: 7
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+
+queues:
+  raw_queue: 10
+  detection_queue: 10
+  match_queue: 10
+  result_queue: 10
+
+matcher:
+  max_workers: 4
+
+optimizer:
+  window_size: 5
+  use_static_ba: true
+  # Optional: object points (list of [x,y,z])
+  # obj_pts: [[-8.0,11.2,0.0], [8.0,11.2,0.0], ...]
+  obj_pts:
+    - [-8.0, 11.2, 0.0]
+    - [8.0, 11.2, 0.0]
+    - [-16.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [16.0, 0.0, 0.0]
+    - [-8.0, -13.9, 0.0]
+    - [8.0, -13.9, 0.0]
+  prior_sigmas:
+    - 0.08726646259971647
+    - 0.08726646259971647
+    - 0.017453292519943295
+    - 0.5
+    - 0.5
+    - 10.0
+  point_sigmas:
+    - 1.5
+    - 1.5
+    - 1.0
+    - 1.0
+    - 1.0
+    - 1.0
+    - 1.0
+
+save:
+  save_debug_image: false
+
+output:
+  path: output
