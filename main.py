@@ -33,7 +33,7 @@ def validate_config(cfg):
     if not infer_model:
         raise ValueError("Inference model must be specified in config")
 
-    # check keypoints num and obj_pts's params nums consistance
+    # check num_keypoints, obj_pts and sigmas dimensions consistency
     num_kps = cfg.get('detector', {}).get('num_keypoints')
     obj_pts = cfg.get('optimizer', {}).get('obj_pts')
     prior_sigmas = cfg.get('optimizer', {}).get('prior_sigmas')

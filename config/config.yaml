@@ -12,6 +12,9 @@ detector:
   conf_threshold: 0.25
   iou_threshold: 0.45
 
+refiner:
+  max_workers: 4
+  
 queues:
   raw_queue: 10
   detection_queue: 10

@@ -5,6 +5,11 @@ import numpy as np
 import os
 
 class InferThread(threading.Thread):
+    """Thread for running inference on frames using a TensorRT model.
+    This thread reads frames from an input queue, runs inference using a TensorRT model 
+    to detect ROIs and keypoints, and puts the results in an output queue. 
+    It also handles CUDA context management to avoid issues in multi-threaded environments.
+    """
     def __init__(self, in_q, out_q, stop_event: threading.Event, cfg: dict):
         super().__init__(daemon=False)
         self.in_q = in_q
