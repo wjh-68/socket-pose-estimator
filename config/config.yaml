@@ -6,6 +6,16 @@ dataset:
   read_nums: 10
   parse_timestamp: true
 
+# online mode config
+sensor:
+  robot_ip: "192.168.1.20"
+  robot_port: 30004
+  camera_id: 0
+  camera_width: 2560
+  camera_height: 1440
+  camera_brightness: 128
+  frame_pose_sync_tolerance_ns: 20_000_000  # 20ms in nanoseconds
+
 camera:
   K:
     - [1359.1199645944478,0.,640.54132556823811]
