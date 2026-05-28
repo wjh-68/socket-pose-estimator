@@ -2,6 +2,7 @@ from core.logger import setup_logger
 import threading
 import time
 import numpy as np
+import queue
 import os
 
 class InferThread(threading.Thread):
@@ -88,14 +89,16 @@ class InferThread(threading.Thread):
                     else:
                         # in online mode, drop old frames if queue is full 
                         # to keep up with real-time
-                        if self.out_q.full():
+                        if queue.full():
                             try:
                                 self.out_q.get_nowait()
-                            except Exception:
+                                self.out_q.task_done()
+                            except queue.Empty:
                                 pass
                         try:
-                            self.out_q.put(packet, block=False)
-                        except Exception:
+                            # equally: put(packet, block=False)
+                            self.out_q.put_nowait(packet)
+                        except queue.Empty:
                             self.logger.warning(
                                 "Output inference queue is full, dropping frame")
                 except Exception:
