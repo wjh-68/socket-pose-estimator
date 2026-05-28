@@ -7,6 +7,9 @@ from core.queues import create_queues
 from data_reader.data_reader import DataReaderThread
 from detector.infer_thread import InferThread
 from detector.refine_thread import RefineThread
+from tracker.tracker_thread import TrackThread
+import matplotlib
+matplotlib.use("Agg")
 # from optimizer.optimizer_thread import OptimizerThread
 # from visualization.visualizer import VisualizerThread
 
@@ -56,8 +59,11 @@ def main():
     # threads
     infer_thread = InferThread(queues["raw_queue"], queues["infer_queue"], stop_event, cfg)
     refine_thread = RefineThread(queues["infer_queue"], queues["refine_queue"], stop_event, cfg)    
+    track_thread = TrackThread(queues["refine_queue"], queues["result_queue"], stop_event, cfg)
     infer_thread.start()
     refine_thread.start()
+    track_thread.start()
+
     # optimizer = OptimizerThread(queues["match_queue"], queues["result_queue"], stop_event, cfg)
     # visualizer = VisualizerThread(queues["result_queue"], stop_event, cfg)
 
@@ -77,7 +83,9 @@ def main():
     # join threads
     infer_thread.join()
     refine_thread.join()
+    track_thread.join()
     data_reader.join()
+    # optimizer.join()
 
     # for t in (detector, matcher, optimizer, visualizer):
     #     t.join()

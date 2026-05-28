@@ -62,8 +62,10 @@ class OfflineDatasetLoader(BaseDatasetLoader):
                 if img is None:
                     raise RuntimeError(f"Failed to read image {img_path}")
                 robot_pose = np.load(pose_path)
+                # temp timestamp
+                timestamp_ns = time.time_ns()
                 packet = FramePacket(
-                    frame_id=frame_id, timestamp=ts, image=img, robot_pose=robot_pose)
+                    frame_id=frame_id, timestamp=timestamp_ns, image=img, robot_pose=robot_pose)
                 yield packet
                 frame_id += 1
             except Exception:

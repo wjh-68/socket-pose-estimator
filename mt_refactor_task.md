@@ -828,6 +828,42 @@ stop_event.is_set()
 
 # 二十一、异常处理
 
+## 两阶段初始化
+构造
+```python
+threads = []
+
+try:
+    a = A(cfg_a)
+    threads.append(a)
+
+    b = B(cfg_b)
+    threads.append(b)
+
+    c = C(cfg_c)
+    threads.append(c)
+
+except Exception:
+
+    cleanup()
+
+    raise
+```
+
+运行
+```python
+for t in threads:
+    t.start()
+```
+## 异常管理
+构造失败
+→ raise
+→ 主线程处理
+
+运行失败
+→ stop_event
+→ 系统协调退出
+
 任意线程异常：
 
 必须：

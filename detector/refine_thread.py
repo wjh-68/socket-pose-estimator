@@ -16,7 +16,7 @@ class RefineThread(threading.Thread):
         self.logger = setup_logger("RefineThread")
         if self.in_q is None or self.out_q is None:
             self.logger.error(
-                "Input or output queue is None, RefineThread will exit")
+                "Input or output queue is None, Thread will exit")
             self.stop_event.set()
 
     def extract_sub_roi(self, image, keypoints)-> tuple:
@@ -107,10 +107,6 @@ class RefineThread(threading.Thread):
             try:
                 packet = self.in_q.get(timeout=0.1)
             except queue.Empty:
-                if self.stop_event.is_set():
-                    self.logger.info(
-                        "RefineThread stopping due to stop event")
-                    break
                 continue
             try:
                 # Handle EOF
@@ -158,3 +154,5 @@ class RefineThread(threading.Thread):
                 return  # finally block will still be executed to mark task done
             finally:
                 self.in_q.task_done()
+
+# TODO: check keypoints dims for all threads

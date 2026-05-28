@@ -6,6 +6,19 @@ dataset:
   read_nums: 10
   parse_timestamp: true
 
+camera:
+  K:
+    - [1359.1199645944478,0.,640.54132556823811]
+    - [0.,1359.1199645944478,362.00605351844041]
+    - [0.,0.,1.]
+  dist:
+    - [-0.11507587466685387,0.28954640142800997,0.002523795531233719,-0.0003497505689869382,-0.093769042874787809]
+  eMc:
+    - [-7.2849429e-01,  6.8505180e-01, -3.0797155e-04, -6.3927837e+01]
+    - [-6.8492085e-01, -7.2834611e-01,  1.9882789e-02,  6.0054520e+01]
+    - [ 1.3396430e-02 , 1.4695434e-02,  9.9980229e-01, -1.7391582e+02]
+    - [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]
+
 detector:
   engine_path: checkpoint/best.engine
   num_keypoints: 7
@@ -21,14 +34,15 @@ queues:
   match_queue: 10
   result_queue: 10
 
-matcher:
-  max_workers: 4
-
+tracker:
+  use_adptive_threshold: true
+  reproj_threshold: 1.0 # pixel
+  adaptive_multiplier: 2.0
+  # object pose rejection threshold 
+  max_translation: 20 # mm
+  max_rotation_deg: 20
 optimizer:
   window_size: 5
-  use_static_ba: true
-  # Optional: object points (list of [x,y,z])
-  # obj_pts: [[-8.0,11.2,0.0], [8.0,11.2,0.0], ...]
   obj_pts:
     - [-8.0, 11.2, 0.0]
     - [8.0, 11.2, 0.0]
@@ -54,7 +68,5 @@ optimizer:
     - 1.0
 
 save:
-  save_debug_image: false
+  result_dir: result/0515_mt
 
-output:
-  path: output
