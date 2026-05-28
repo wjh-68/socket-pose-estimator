@@ -5,16 +5,17 @@ import cv2
 from core.logger import setup_logger
 from data_reader.offline_loader import OfflineDatasetLoader
 from data_reader.sensor_data_manager import get_robot_pose_from_rpc, SensorDataManager
-
+from core.packet import FramePacket
+import queue
 
 class DataReaderThread(Thread):
     """DataReaderThread is responsible for reading data from the specified source (offline or online) 
-    and feeding it into the raw_queue for processing by the pipeline.
+    and feeding it into the out_q for processing by the pipeline.
     """
 
-    def __init__(self, raw_queue: Any, stop_event, cfg: dict):
+    def __init__(self, out_q: Any, stop_event, cfg: dict):
         super().__init__(daemon=True)
-        self.raw_queue = raw_queue
+        self.out_q = out_q
         self.stop_event = stop_event
         validate_cfg(cfg)
         self.cfg = cfg
@@ -34,15 +35,15 @@ class DataReaderThread(Thread):
                 if self.stop_event.is_set():
                     break
                 try:
-                    self.raw_queue.put(pkt, block=True)
+                    self.out_q.put(pkt, block=True)
                 except Exception:
-                    self.logger.exception('Failed to put packet into raw_queue')
+                    self.logger.exception('Failed to put packet into out_q')
                     self.stop_event.set()
                     break
 
             self.logger.info('Offline dataset exhausted[EOF]')
             # using None as sentinel value to indicate end of data
-            self.raw_queue.put(None)  
+            self.out_q.put(None)  
             return
         elif mode == 'online':
             sensor_cfg = self.cfg.get('sensor', {})
@@ -53,7 +54,8 @@ class DataReaderThread(Thread):
             camera_height = sensor_cfg.get('camera_height')
             camera_brightness = sensor_cfg.get('camera_brightness')
             sync_tolerance_ns = sensor_cfg.get('sync_tolerance_ns')
-            
+            read_nums = sensor_cfg.get('read_nums', None)
+
             self.data_source = SensorDataManager(
                 mode='online',
                 robot_ip=robot_ip,
@@ -89,14 +91,32 @@ class DataReaderThread(Thread):
                     # Reset skip counter on successful frame
                     frame_skip_count = 0
                     
-                    # Process frame
+                    # packet a frame
                     timestamp_ns = int(time.perf_counter_ns())
-                    if self._process_one_frame(img, robot_pose, frame_id, timestamp_ns):
-                        frame_id += 1
+                    packet = FramePacket(
+                        frame_id=frame_id, timestamp=timestamp_ns, image=img, robot_pose=robot_pose)
+                        
+                    try:
+                        self.out_q.put_nowait(packet)
+                    except queue.Full:
+                        try:
+                            dropped = self.out_q.get_nowait()
+                            self.out_q.task_done()
+                            self.logger.warning(
+                                "Output queue full, dropping olddest packet")
+                        except queue.Empty:
+                            pass
+
+                        try:
+                            self.out_q.put_nowait(packet)
+                        except queue.Full:
+                            self.logger.warning(
+                                "Output queue still full")
+                    frame_id += 1
                     
-                    # Check max frames limit
-                    if self.max_frames > 0 and frame_id > self.max_frames:
-                        print(f"Reached max frames limit ({self.max_frames}), stopping...")
+                    # Check read frames limit
+                    if read_nums is not None and frame_id > read_nums:
+                        print(f"Reached read_nums limit ({read_nums}), stopping...")
                         break
                     
                     # Display current frame

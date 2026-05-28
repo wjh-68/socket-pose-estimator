@@ -15,6 +15,7 @@ sensor:
   camera_height: 1440
   camera_brightness: 128
   frame_pose_sync_tolerance_ns: 20_000_000  # 20ms in nanoseconds
+  # read_nums: 10
 
 camera:
   K:
