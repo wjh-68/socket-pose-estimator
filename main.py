@@ -58,8 +58,6 @@ def main():
     refine_thread = RefineThread(queues["infer_queue"], queues["refine_queue"], stop_event, cfg)    
     infer_thread.start()
     refine_thread.start()
-    # detector = DetectorThread(queues["raw_queue"], queues["detection_queue"], stop_event, cfg)
-    # matcher = MatcherThread(queues["detection_queue"], queues["match_queue"], stop_event, cfg)
     # optimizer = OptimizerThread(queues["match_queue"], queues["result_queue"], stop_event, cfg)
     # visualizer = VisualizerThread(queues["result_queue"], stop_event, cfg)
 

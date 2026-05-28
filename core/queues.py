@@ -10,7 +10,5 @@ def create_queues(cfg: dict):
         "raw_queue": Queue(maxsize=ms("raw_queue")),
         "infer_queue": Queue(maxsize=ms("infer_queue")),
         "refine_queue": Queue(maxsize=ms("refine_queue")),
-        "detection_queue": Queue(maxsize=ms("detection_queue")),
-        "match_queue": Queue(maxsize=ms("match_queue")),
         "result_queue": Queue(maxsize=ms("result_queue")),
     }
