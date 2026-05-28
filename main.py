@@ -6,8 +6,7 @@ from core.queues import create_queues
 # from data.offline_loader import OfflineDatasetLoader
 from data_reader.data_reader import DataReaderThread
 from detector.infer_thread import InferThread
-# from detector.detector import DetectorThread
-# from matcher.matcher import MatcherThread
+from detector.refine_thread import RefineThread
 # from optimizer.optimizer_thread import OptimizerThread
 # from visualization.visualizer import VisualizerThread
 
@@ -56,7 +55,9 @@ def main():
 
     # threads
     infer_thread = InferThread(queues["raw_queue"], queues["infer_queue"], stop_event, cfg)
+    refine_thread = RefineThread(queues["infer_queue"], queues["refine_queue"], stop_event, cfg)    
     infer_thread.start()
+    refine_thread.start()
     # detector = DetectorThread(queues["raw_queue"], queues["detection_queue"], stop_event, cfg)
     # matcher = MatcherThread(queues["detection_queue"], queues["match_queue"], stop_event, cfg)
     # optimizer = OptimizerThread(queues["match_queue"], queues["result_queue"], stop_event, cfg)
@@ -77,6 +78,7 @@ def main():
 
     # join threads
     infer_thread.join()
+    refine_thread.join()
     data_reader.join()
 
     # for t in (detector, matcher, optimizer, visualizer):
