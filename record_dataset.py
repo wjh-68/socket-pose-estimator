@@ -65,9 +65,9 @@ def euler_from_pose(pose):
 def read_camera():
     global latest_frame, latest_frame_ts
     cap = cv2.VideoCapture(CAMERA_ID)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
-    cap.set(cv2.CAP_PROP_BRIGHTNESS, 128)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, 100)
 
     while recording:
         ret, frame = cap.read()

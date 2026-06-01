@@ -179,4 +179,4 @@ def refine_ellipse(raw_ellipses):
     # 3. 按尺寸再次过滤明显非孔物体
     # 假设小孔外径在图像中至少有一定像素宽度
     # merged = [m for m in merged if m['size'] > 20 ]
-    return sort_[-1]
+    return sort_[-1] if sort_ else None

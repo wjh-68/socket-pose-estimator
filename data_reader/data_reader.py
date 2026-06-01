@@ -49,7 +49,7 @@ class DataReaderThread(Thread):
             sensor_cfg = self.cfg.get('sensor', {})
             robot_ip = sensor_cfg.get('robot_ip')
             robot_port = sensor_cfg.get('robot_port')
-            camera_id = sensor_cfg.get('camera_id')
+            camera_id = sensor_cfg.get('camera_id', 0)
             camera_width = sensor_cfg.get('camera_width')
             camera_height = sensor_cfg.get('camera_height')
             camera_brightness = sensor_cfg.get('camera_brightness')
@@ -73,7 +73,9 @@ class DataReaderThread(Thread):
                 frame_id = 1
                 frame_skip_count = 0
                 
-                while True:
+                while not self.stop_event.is_set():
+                    
+                    t0 = time.perf_counter_ns()
                     # Get synchronized frame and pose
                     img, robot_pose, sync_info, success = self.data_source.get_next_frame_pose()
                     
@@ -85,7 +87,8 @@ class DataReaderThread(Thread):
                             # Data not synchronized
                             frame_skip_count += 1
                             if frame_skip_count % 100 == 0:
-                                print(f"Skipping unsynchronized frames (diff={sync_info/1e6:.2f}ms)")
+                                pass
+                                # print(f"Skipping unsynchronized frames (diff={sync_info/1e6:.2f}ms)")
                             continue
                     
                     # Reset skip counter on successful frame
@@ -119,14 +122,33 @@ class DataReaderThread(Thread):
                         print(f"Reached read_nums limit ({read_nums}), stopping...")
                         break
                     
+                    duration = (time.perf_counter_ns() - t0) / 1e6
+                    print(f"Frame {frame_id} processed in {duration:.2f}ms")
                     # Display current frame
                     # cv2.imshow('pose_estimation', img)
                     # if cv2.waitKey(1) & 0xFF == ord('q'):
                     #     print("User interrupted")
                     #     break
-                        
-            except KeyboardInterrupt:
-                print("Interrupted by user")
+
+                try:
+                    self.out_q.put_nowait(None)
+                except queue.Full:
+                    try:
+                        dropped = self.out_q.get_nowait()
+                        self.out_q.task_done()
+                        self.logger.warning(
+                            "Output queue full, dropping olddest packet")
+                    except queue.Empty:
+                        pass
+
+                    try:
+                        self.out_q.put_nowait(None)
+                    except queue.Full:
+                        self.logger.warning(
+                            "Output queue still full")      
+            
+            except Exception:
+                self.logger.exception("Online mode: read error")
             finally:
                 self.data_source.stop_online()
         else:
@@ -145,26 +167,26 @@ def validate_cfg(cfg: dict):
             raise ValueError("Offline mode requires dataset.path in config")
     if mode == 'online':
         sensor_cfg = cfg.get('sensor', {})
-        if not sensor_cfg:
+        if sensor_cfg is None:
             raise ValueError("Online mode requires sensor config in config")
         robot_ip = sensor_cfg.get('robot_ip')
-        if not robot_ip:
+        if robot_ip is None:
             raise ValueError("Online mode requires robot_ip in sensor config")
         robot_port = sensor_cfg.get('robot_port')
-        if not robot_port:
+        if robot_port is None:
             raise ValueError("Online mode requires robot_port in sensor config")
         camera_id = sensor_cfg.get('camera_id')
-        if not camera_id:
+        if camera_id is None:
             raise ValueError("Online mode requires camera_id in sensor config")
         camera_width = sensor_cfg.get('camera_width')
-        if not camera_width:
+        if camera_width is None:
             raise ValueError("Online mode requires camera_width in sensor config")
         camera_height = sensor_cfg.get('camera_height')
-        if not camera_height:
+        if camera_height is None:
             raise ValueError("Online mode requires camera_height in sensor config")
         camera_brightness = sensor_cfg.get('camera_brightness')
-        if not camera_brightness:
+        if camera_brightness is None:
             raise ValueError("Online mode requires camera_brightness in sensor config")
-        frame_pose_sync_tolerance_ns = sensor_cfg.get('frame_pose_sync_tolerance_ns')
-        if not frame_pose_sync_tolerance_ns:
-            raise ValueError("Online mode requires frame_pose_sync_tolerance_ns in sensor config")
+        sync_tolerance_ns = sensor_cfg.get('sync_tolerance_ns')
+        if sync_tolerance_ns is None:
+            raise ValueError("Online mode requires sync_tolerance_ns in sensor config")

@@ -70,7 +70,28 @@ class RefineThread(threading.Thread):
             result = executor.map(detect_and_refine_ellipses, sub_roi_imgs)
 
         # convert to original image coordinates
-        refined_ellipses = np.array([res['p'] for res in result])  # shape (7,2)
+        # filter out None results from failed detections
+        valid_results = [res for res in result if res is not None]
+        
+        if len(valid_results) == 0:
+            self.logger.warning(
+                "All ellipse detections failed, no valid results")
+            return None
+            
+        if len(valid_results) != len(sub_roi_imgs):
+            self.logger.warning(
+                f"Partial detection failure: {len(valid_results)}/{len(sub_roi_imgs)} points detected")
+        
+        refined_ellipses = np.array([res['p'] for res in valid_results])  # shape (N,2)
+
+        # check dimension consistency
+        if refined_ellipses.shape[0] != tls.shape[0]:
+            self.logger.warning(
+                "Refined ellipses and top-left corners have inconsistent dimensions" \
+                "Refined ellipses shape: {}, top-left corners shape: {}".format(
+                    refined_ellipses.shape, tls.shape))
+            return None
+        
         refined_pts = refined_ellipses + tls  # dims should match
         return refined_pts
 
@@ -87,6 +108,7 @@ class RefineThread(threading.Thread):
             refined_pts = packet.keypoints
         packet.refined_pts2d = refined_pts
         packet.timing['refine'] = (time.time() - t0) * 1000.0
+        print(f"refine time: {packet.timing['refine']:.2f}ms")
         return packet
     
     def validate_packet(self, packet):
@@ -149,9 +171,7 @@ class RefineThread(threading.Thread):
 
             except Exception:
                 self.logger.exception(
-                    "RefineThread fatal error, exiting")
-                self.stop_event.set()
-                return  # finally block will still be executed to mark task done
+                    "RefineThread error")
             finally:
                 self.in_q.task_done()
 

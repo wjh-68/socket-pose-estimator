@@ -69,6 +69,7 @@ class TrackThread(threading.Thread):
     def run(self):
         mode = self.cfg.get('mode', 'offline')
         while not self.stop_event.is_set():
+            t0 = time.perf_counter_ns()
             # Get packet from input queue
             try:
                 packet = self.in_q.get(timeout=0.1)
@@ -89,12 +90,11 @@ class TrackThread(threading.Thread):
                 self.process(packet, EOF)
                 # TODO: put result packet to out_q
             except Exception:
-                self.logger.exception(
-                    "RefineThread fatal error, exiting")
-                self.stop_event.set()
-                return  # finally block will still be executed to mark task done
+                self.logger.exception("TrackThread error")
             finally:
                 self.in_q.task_done()
+                duration = (time.perf_counter_ns() - t0) / 1e6
+                print(f"TrackThread in {duration:.2f}ms")
 
 
 

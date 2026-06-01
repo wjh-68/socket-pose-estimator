@@ -113,7 +113,7 @@ class SensorDataManager:
                 with self.frame_lock:
                     self.latest_frame = frame.copy()
                     self.latest_frame_ts = time.perf_counter_ns()
-            time.sleep(0.05)  # 20Hz sampling
+            time.sleep(1.0)  # 20Hz sampling
     
     def _read_robot_loop(self):
         """Robot thread function."""
@@ -131,7 +131,7 @@ class SensorDataManager:
                 print(f"Error reading robot pose: {e}")
                 time.sleep(0.01)
                 continue
-            time.sleep(0.02)  # 50Hz sampling
+            time.sleep(0.05)  # 50Hz sampling
     
     def get_next_frame_pose_online(self):
         """

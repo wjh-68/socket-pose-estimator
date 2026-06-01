@@ -1,21 +1,22 @@
+# mode: online
 mode: offline
 
 # only for offline mode
 dataset:
-  path: dataset/0515
-  read_nums: 10
-  parse_timestamp: true
+  path: dataset/save_data3/20260529_113904/data
+  read_nums: 800
+  parse_timestamp: false
 
 # online mode config
 sensor:
   robot_ip: "192.168.1.20"
   robot_port: 30004
   camera_id: 0
-  camera_width: 2560
-  camera_height: 1440
-  camera_brightness: 128
-  frame_pose_sync_tolerance_ns: 20_000_000  # 20ms in nanoseconds
-  # read_nums: 10
+  camera_width: 1280
+  camera_height: 720
+  camera_brightness: 100
+  sync_tolerance_ns: 20000000  # 20ms in nanoseconds
+  # read_nums: 500
 
 camera:
   K:
@@ -79,5 +80,5 @@ optimizer:
     - 1.0
 
 save:
-  result_dir: result/0515_mt
+  result_dir: result/mt_offline/20260529_113904
 

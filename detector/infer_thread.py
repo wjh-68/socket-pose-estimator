@@ -59,11 +59,11 @@ class InferThread(threading.Thread):
                 self.logger.error("InferThread has no model, exiting")
                 self.stop_event.set()
 
-            while True:
+            while not self.stop_event.is_set():
                 # Get packet from input queue
                 try:
                     packet = self.in_q.get(timeout=0.1)
-                except Exception:
+                except queue.Empty:
                     continue
                 
 
@@ -76,6 +76,7 @@ class InferThread(threading.Thread):
                         break       # finally block will be executed before breaking
 
                     # Process packet with TRT model
+                    print(f"image size: {packet.image.shape}")
                     roi, keypoints = getInfer(self.model, packet.image)
                     if roi is None or keypoints is None:
                         self.logger.warning("Inference returned no detections")
@@ -83,24 +84,30 @@ class InferThread(threading.Thread):
                     packet.roi = roi
                     packet.keypoints = keypoints
                     packet.timing['infer'] = (time.time() - t0) * 1000.0
+                    print(f"infer time: {packet.timing['infer']:.2f}ms")
                     if self.mode == 'offline':
                         # block until space is available to preserve order
                         self.out_q.put(packet, block=True)
                     else:
                         # in online mode, drop old frames if queue is full 
                         # to keep up with real-time
-                        if queue.full():
-                            try:
-                                self.out_q.get_nowait()
-                                self.out_q.task_done()
-                            except queue.Empty:
-                                pass
                         try:
                             # equally: put(packet, block=False)
                             self.out_q.put_nowait(packet)
-                        except queue.Empty:
-                            self.logger.warning(
-                                "Output inference queue is full, dropping frame")
+                        except queue.Full:
+                            try:
+                                dropped = self.out_q.get_nowait()
+                                self.out_q.task_done()
+                                self.logger.warning(
+                                    "Output queue full, dropping olddest packet")
+                            except queue.Empty:
+                                pass
+
+                            try:
+                                self.out_q.put_nowait(packet)
+                            except queue.Full:
+                                self.logger.warning(
+                                    "Output queue still full")
                 except Exception:
                     self.logger.exception("Inference error")
                 finally:

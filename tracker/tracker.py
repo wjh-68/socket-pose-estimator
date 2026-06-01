@@ -48,6 +48,9 @@ class Tracker:
 
         # load result_dir
         self.result_dir = self.cfg.get('save', {}).get('result_dir', './result')
+        # check dir exists
+        if not os.path.exists(self.result_dir):
+            os.makedirs(self.result_dir)
         # init optimizer
         self.optimizer = StaticPoseOptimizer(
             self.K, self.dist, 
