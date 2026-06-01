@@ -4,7 +4,7 @@ from typing import Iterator
 import numpy as np
 import cv2
 from core.packet import FramePacket
-from .base_loader import BaseDatasetLoader
+from .base_data_source import BaseDatasetLoader
 from core.logger import setup_logger
 
 
