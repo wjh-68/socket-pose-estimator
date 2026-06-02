@@ -1,22 +1,29 @@
 from abc import ABC, abstractmethod
-
+from core.packet import FramePacket
+from typing import Optional
 
 class BaseDataSource(ABC):
-    @abstractmethod
-    def start(self):
-        """Start data source."""
-        raise NotImplementedError()
 
-    @abstractmethod
-    def stop(self):
-        """Stop data source."""
-        raise NotImplementedError()
-
-    @abstractmethod
-    def get_packet(self):
-        """Get next FramePacket."""
-        raise NotImplementedError()
+    def __init__(self,cfg):
+        self.cfg = cfg
         
+    def initialize(self):
+        
+        pass
+
+    def start(self):
+        pass
+
+    @abstractmethod
+    def get_packet(self) -> Optional[FramePacket]:
+        """must implement"""
+        raise NotImplementedError()
+    
+    def stop(self):
+        pass
+
+    def cleanup(self):
+        pass
 # class BaseDatasetLoader(ABC):
 #     @abstractmethod
 #     def load(self):

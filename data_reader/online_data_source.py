@@ -40,7 +40,6 @@ class OnlineDataSourceConfig:
     robot_login_name: str = "aubo"
     robot_password: str = "123456"
     sync_tolerance_ms: float
-    read_image_nums: int = 100
 
 class OnlineDataSource(BaseDataSource):
     def __init__(
@@ -48,7 +47,7 @@ class OnlineDataSource(BaseDataSource):
             cfg: OnlineDataSourceConfig,
             stop_event,
     ):
-        self.cfg = cfg
+        super().__init__(cfg)
         self.stop_event = stop_event
         self.logger = setup_logger(__name__)
         self.state = DataSourceState.CREATED
