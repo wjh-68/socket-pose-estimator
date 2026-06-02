@@ -7,9 +7,11 @@ import numpy as np
 class FramePacket:
     # raw data
     frame_id: int
-    timestamp: float
+    timestamp: int # ns
+    sync_error_ms: float
     image: np.ndarray
-    robot_pose: np.ndarray = field(default_factory=lambda: np.zeros((4, 4)))
+    robot_pose: np.ndarray = field(\
+        default_factory=lambda: np.zeros((4, 4)))
 
     # inference results
     roi: Optional[Any] = None
