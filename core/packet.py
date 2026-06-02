@@ -12,6 +12,7 @@ class FramePacket:
     image: np.ndarray
     robot_pose: np.ndarray = field(\
         default_factory=lambda: np.zeros((4, 4)))
+    eof: bool = False  # end of data flag
 
     # inference results
     roi: Optional[Any] = None
