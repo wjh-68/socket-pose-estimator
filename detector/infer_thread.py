@@ -1,5 +1,6 @@
 from core.logger import setup_logger
 from core.queues import put_latest
+from config.queue_config import QueueConfig
 import threading
 import time
 import numpy as np
@@ -17,16 +18,14 @@ class InferThreadConfig:
     num_keypoints: int = 7
     conf_threshold: float = 0.25
     iou_threshold: float = 0.45
+    queue_config: QueueConfig = QueueConfig()
 
 
 class InferenceState(Enum):
-
     CREATED = auto()
-
     INITIALIZED = auto()
-
     RUNNING = auto()
-
+    ERROR = auto()
     DESTROYED = auto()
 
 class InferThread(threading.Thread):
@@ -35,11 +34,8 @@ class InferThread(threading.Thread):
     to detect ROIs and keypoints, and puts the results in an output queue. 
     It also handles CUDA context management to avoid issues in multi-threaded environments.
     """
-    def __init__(self, 
-                 in_q: queue.Queue,
-                 out_q: queue.Queue,
-                 stop_event: threading.Event,
-                 cfg: InferThreadConfig):
+    def __init__(self, in_q: queue.Queue, out_q: queue.Queue,
+                 stop_event: threading.Event, cfg: InferThreadConfig):
         super().__init__(daemon=False)
         self.in_q = in_q
         self.out_q = out_q
@@ -50,61 +46,58 @@ class InferThread(threading.Thread):
 
         # Dont load model here(main thread), defer to run()  
         # to avoid GPU context issues in multi-threaded environments
-        # self.model = None
+
+        # GPU and model objects
+        self.cuda_ctx = None
+        self.model = None
 
     def _initialize(self):
+        """Initialize CUDA context and load TRT engine inside thread."""
         if self.state != InferenceState.CREATED:
             raise RuntimeError(
                 f"_initialize() invalid state {self.state}"
             )
     
-        import pycuda.driver as cuda
-        from detector.trt_pose_inf import YOLOTRTposeInference
-        cuda.init()
-        self.cuda_ctx = cuda.Device(0).make_context()
-
         try:
-            engine_path = self.cfg.engine_path
-            class_names = self.cfg.class_names
-            num_kps = self.cfg.num_keypoints
-            conf_th = self.cfg.conf_threshold
-            iou_th = self.cfg.iou_threshold
+            import pycuda.driver as cuda
+            from detector.trt_pose_inf import YOLOTRTposeInference
+            cuda.init()
+            self.cuda_ctx = cuda.Device(0).make_context()
 
             # Check if engine file exists
-            if not os.path.isfile(engine_path):
+            if not os.path.isfile(self.cfg.engine_path):
                 raise FileNotFoundError(
-                    f"Engine file not found: {engine_path}")
+                    f"Engine file not found: {self.cfg.engine_path}")
             # Load TRT model
             self.model = YOLOTRTposeInference(
-                engine_path, class_names, num_kps, conf_th, iou_th)
-            self.logger.info(f"Loaded TRT model from {engine_path}")
-        except Exception as e:
-            self.logger.exception(
-                f"Failed to initialize InferThread: {e}")
-            self.model = None
-            self.stop_event.set()
-        finally:
+                engine_path = self.cfg.engine_path,
+                class_names = self.cfg.class_names,
+                num_kps = self.cfg.num_keypoints,
+                conf_th = self.cfg.conf_threshold,
+                iou_th = self.cfg.iou_threshold,
+                )
             self.state = InferenceState.INITIALIZED
-
-    def _cleanup(self):
-        if self.state != InferenceState.INITIALIZED:
-            raise RuntimeError(
-                f"_cleanup() invalid state {self.state}"
-            )
-        if self.model is not None:
-            # if the model has any explicit cleanup method, call it here
-            self.model.destroy()
-            del self.model
-            self.model = None
-
-        import gc
-        gc.collect()
-        self.cuda_ctx.pop()
-        self.cuda_ctx.detach()
+            self.logger.info(
+                f"Loaded TRT model from {self.cfg.engine_path}")
+        except Exception:
+            self.logger.exception(
+                f"Failed to initialize InferThread")
+            self._cleanup()
+            self.state = InferenceState.ERROR
+            raise
+    
 
     def run(self):
         from detector.trt_pose_inf import getInfer
-        self._initialize()
+        try:
+            self._initialize()
+        except Exception:
+            self.logger.error(
+                "Initialization failed, stopping thread")
+            self.stop_event.set()
+            return
+        
+        self.state = InferenceState.RUNNING
 
         while not self.stop_event.is_set():
             try:
@@ -113,20 +106,23 @@ class InferThread(threading.Thread):
                 continue
 
             try:
-                # error handling for None packets (should not happen
-                # if upstream threads are well-behaved, but just in case)
+                # Handle abnormal upstream packet
                 if packet is None:
                     self.logger.warning(
                         "InferThread received None packet, skipping")
                     continue
                 
-                # handle EOF sentinel
-                if packet.eof:
-                    self.logger.info("InferThread received EOF")
+                # EOF packet from upstream
+                if getattr(packet, "eof", False):
+                    self.logger.info("received EOF packet")
                     self.out_q.put(packet)  # pass EOF packet downstream
                     break   # finally block will be executed before breaking
 
-                # Process packet with TRT model
+                if packet.image is None:
+                    self.logger.warning(
+                        "Skipping while no image in received packet")
+                    continue
+                # Run inference with TRT model
                 roi, keypoints = getInfer(self.model, packet.image)
                 if roi is None or keypoints is None:
                     self.logger.warning("Inference returned no detections")
@@ -145,9 +141,34 @@ class InferThread(threading.Thread):
                 else:
                     self.out_q.put(packet, block=True)
 
-            except Exception:
-                self.logger.exception("Inference error")
+            except Exception as e:
+                self.logger.exception(
+                    f"Inference processing error: {e}")
             finally:
                 self.in_q.task_done()
 
         self._cleanup()
+
+    def _cleanup(self):
+        """Release GPU resources and model safely."""
+        try:
+            if self.model is not None:
+                if hasattr(self.model, "destroy"):
+                    self.model.destroy()
+                del self.model
+                self.model = None
+        except Exception:
+            self.logger.exception("Failed to cleanup TRT model")
+        
+        try:
+            if self.cuda_ctx is not None:
+                self.cuda_ctx.pop()
+                self.cuda_ctx.detach()
+                self.cuda_ctx = None
+        except Exception:
+            self.logger.exception("Failed to release CUDA context")
+        
+        import gc
+        gc.collect()
+        self.state = InferenceState.DESTROYED
+        self.logger.info("InferThread cleanup completed")
