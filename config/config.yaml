@@ -39,6 +39,7 @@ detector:
 
 refiner:
   max_workers: 4
+  num_keypoints: 7
   
 queues:
   raw_queue: 10
