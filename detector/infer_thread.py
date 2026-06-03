@@ -6,7 +6,7 @@ import time
 import numpy as np
 import queue
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
 
@@ -18,8 +18,8 @@ class InferThreadConfig:
     num_keypoints: int = 7
     conf_threshold: float = 0.25
     iou_threshold: float = 0.45
-    queue_config: QueueConfig = QueueConfig()
-
+    queue_config: QueueConfig = field(
+        default_factory=QueueConfig)
 
 class InferenceState(Enum):
     CREATED = auto()
@@ -109,7 +109,7 @@ class InferThread(threading.Thread):
                 # Handle abnormal upstream packet
                 if packet is None:
                     self.logger.warning(
-                        "InferThread received None packet, skipping")
+                        "received None packet, skipping")
                     continue
                 
                 # EOF packet from upstream

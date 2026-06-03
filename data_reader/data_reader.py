@@ -6,13 +6,14 @@ from core.packet import FramePacket
 from core.queues import put_latest
 from .base_data_source import BaseDataSource
 import queue
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from config.queue_config import QueueConfig
 
 @dataclass
 class DataReaderConfig:
-    queue_config: QueueConfig = QueueConfig()
-
+    queue_config: QueueConfig = field(
+            default_factory=QueueConfig)
+            
 class DataReaderThread(threading.Thread):
 
     def __init__(self,
