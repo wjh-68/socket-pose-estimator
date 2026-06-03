@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-# from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation
 
 # -----------------------------
 # PnP/IPPE Wrapper
@@ -58,19 +58,20 @@ def compute_reproj_error(pts3d, rvec, tvec, pts2d, K, dist):
 
 from dataclasses import dataclass
 from typing import Optional
-@dataclass
+
+@dataclass(slots=True)
 class Pose:
     rvec: np.ndarray
     tvec: np.ndarray
 
-@dataclass
+@dataclass(slots=True)
 class PnPDiagnostics:
     inlier_mask: np.ndarray
     per_point_errors: np.ndarray
     round1_error: float
     used_threshold: float
 
-@dataclass
+@dataclass(slots=True)
 class PnPResult:
     valid: bool
     reason: str = ""
@@ -118,16 +119,6 @@ def two_round_pnp(
         - round1_error (float): Mean reproj error of round1
         - used_threshold (float): Threshold used to classify inliers
     """
-    result = {
-        "valid": False,
-        "reason": None,
-        "rvec": None,
-        "tvec": None,
-        "inlier_mask": None,
-        "per_point_errors": None,
-        "round1_error": None,
-        "used_threshold": None
-    }
     rvec1, tvec1, valid1, reason = solvePnP_IPPE(pts2d, pts3d, K, dist)
     if not valid1:
         return PnPResult(valid=False, reason=reason, pose=None, diagnostics=None)
@@ -154,9 +145,36 @@ def two_round_pnp(
         if valid2:
             per_point_errors_round2 = compute_per_point_reproj_errors(pts3d, rvec2, tvec2, pts2d, K, dist)
             return PnPResult(
-                valid=True, reason="", pose=Pose(rvec2, tvec2), diagnostics=PnPDiagnostics(inlier_mask, per_point_errors_round2, round1_error, current_threshold))
+                valid=True, reason="", pose=Pose(rvec2, tvec2), \
+                diagnostics=PnPDiagnostics(
+                    inlier_mask, per_point_errors_round2, round1_error, current_threshold))
         else:
             return PnPResult(valid=False, reason=reason2, pose=None, diagnostics=None)
     # Fallback: return round1 results
     return PnPResult(
-        valid=True, reason="", pose=Pose(rvec1, tvec1), diagnostics=PnPDiagnostics(inlier_mask, per_point_errors, round1_error, current_threshold))
+        valid=True, reason="", pose=Pose(rvec1, tvec1), \
+        diagnostics=PnPDiagnostics(
+            inlier_mask, per_point_errors, round1_error, current_threshold))
+
+def rvec_tvec_to_transform(rvec, tvec):
+    """Convert rotation vector and translation vector to 4x4 transformation matrix.
+
+    Args:
+        rvec: Rotation vector (3x1 or 1x3 array)
+        tvec: Translation vector (3x1 or 1x3 array)
+
+    Returns:
+        transform: 4x4 homogeneous transformation matrix
+    """
+    transform = np.eye(4)
+    transform[:3, :3] = Rotation.from_rotvec(rvec).as_matrix()
+    transform[:3, 3] = tvec.flatten()
+    return transform
+
+# convert transform mat to rvec and tvec
+def transform_to_rvec_tvec(transform):
+    rvec = np.zero(3)
+    tvec = np.zero(3)
+    rvec = Rotation.from_matrix(transform[:3, :3]).as_rotvec()
+    tvec = transform[:3, 3]
+    return rvec, tvec

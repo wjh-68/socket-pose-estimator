@@ -36,4 +36,6 @@ class PoseEstimatorConfig:
     object_model: ObjectModelConfig
     tracker: TrackerConfig
     optimizer: OptimizerConfig
+    # temp
+    result_dir: str = ""
     # queue: QueueConfig
