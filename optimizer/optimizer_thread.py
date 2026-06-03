@@ -2,23 +2,28 @@ import threading
 import time
 from collections import deque
 import numpy as np
+import queue
 from core.logger import setup_logger
+from core.queues import put_latest
+from config.queue_config import QueueConfig
+from dataclasses import dataclass, field
 
-try:
-    from static_pose_optimizer_ba import StaticPoseOptimizer, load_camera_parameters
-except Exception:
-    StaticPoseOptimizer = None
-    load_camera_parameters = None
+from static_pose_optimizer_ba import StaticPoseOptimizer, load_camera_parameters
 
+@dataclass
+class OptimizerThreadConfig:
+    window_size: int = 5
+    queue_config: QueueConfig = field(
+        default_factory=QueueConfig)
 
 class OptimizerThread(threading.Thread):
-    def __init__(self, in_q, out_q, stop_event, cfg):
+    def __init__(self, in_q:queue.Queue, out_q:queue.Queue, stop_event, cfg:OptimizerThreadConfig):
         super().__init__(name="OptimizerThread", daemon=True)
         self.in_q = in_q
         self.out_q = out_q
         self.stop_event = stop_event
         self.cfg = cfg
-        self.logger = setup_logger("Optimizer")
+        self.logger = setup_logger("OptimizerThread")
         self.window_size = cfg.get('optimizer', {}).get('window_size', 5)
         self.sliding_window = deque(maxlen=self.window_size)
 
