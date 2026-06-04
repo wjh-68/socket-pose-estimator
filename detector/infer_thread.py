@@ -6,20 +6,9 @@ import time
 import numpy as np
 import queue
 import os
-from dataclasses import dataclass, field
+from config.infer_config import InferThreadConfig
 from enum import Enum, auto
-from typing import Optional
 
-
-@dataclass
-class InferThreadConfig:
-    engine_path: str
-    class_names: list = ["object"]
-    num_keypoints: int = 7
-    conf_threshold: float = 0.25
-    iou_threshold: float = 0.45
-    queue_config: QueueConfig = field(
-        default_factory=QueueConfig)
 
 class InferenceState(Enum):
     CREATED = auto()

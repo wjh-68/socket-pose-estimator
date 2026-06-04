@@ -1,0 +1,96 @@
+data_source:
+  mode: offline
+  offline:
+    dataset_path: dataset/save_data3/20260529_113904/data
+    read_image_nums: 800
+    parse_timestamp: false
+  online:
+    camera_id: "0"
+    camera_width: 1280
+    camera_height: 720
+    camera_brightness: 100
+    robot_ip: "192.168.1.20"
+    robot_port: 30004
+    robot_login_name: "aubo"
+    robot_password: "123456"
+    sync_tolerance_ms: 50.0
+
+data_reader:
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.02
+
+infer:
+  engine_path: "models/yolo_pose_port513.pt"
+  class_names:
+    - object
+  num_keypoints: 7
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.02
+
+refine:
+  max_workers: 4
+  num_keypoints: 7
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.02
+
+pose_estimator:
+  pose_estimator_cfg:
+    window_size: 5
+    camera:
+      K:
+        - [1359.1199645944478,0.,640.54132556823811]
+        - [0.,1359.1199645944478,362.00605351844041]
+        - [0.,0.,1.]
+      dist: 
+        - [-0.11507587466685387,0.28954640142800997,0.002523795531233719,-0.0003497505689869382,-0.093769042874787809]
+      eMc:
+        - [-7.2849429e-01,  6.8505180e-01, -3.0797155e-04, -6.3927837e+01]
+        - [-6.8492085e-01, -7.2834611e-01,  1.9882789e-02,  6.0054520e+01]
+        - [ 1.3396430e-02,  1.4695434e-02,  9.9980229e-01, -1.7391582e+02]
+        - [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]
+
+    object_model:
+      obj_pts:
+        - [-8.0, 11.2, 0.0]
+        - [8.0, 11.2, 0.0]
+        - [-16.0, 0.0, 0.0]
+        - [0.0, 0.0, 0.0]
+        - [16.0, 0.0, 0.0]
+        - [-8.0, -13.9, 0.0]
+        - [8.0, -13.9, 0.0]
+    tracker:
+      use_adaptive_threshold: true
+      reproj_error_threshold: 1.0
+      adaptive_multiplier: 2.0
+      min_inliers: 4
+      max_translation: 20.0
+      max_rotation_deg: 20.0
+    optimizer:
+      prior_sigmas: 
+        - 0.08726646259971647
+        - 0.08726646259971647
+        - 0.017453292519943295
+        - 0.5
+        - 0.5
+        - 10.0
+      point_sigmas: 
+        - 1.5
+        - 1.5
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+    result_dir: "result/mt_offline/20260529_113904_new"
+  queue_cfg:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.02

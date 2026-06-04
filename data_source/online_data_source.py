@@ -10,6 +10,7 @@ from core.logger import setup_logger
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
+from config.data_source_config import OnlineDataSourceConfig
 
 class DataSourceState(Enum):
 
@@ -29,17 +30,6 @@ class TimestampedData:
     timestamp_ns: int = 0
     data: object = None
 
-@dataclass
-class OnlineDataSourceConfig:
-    camera_id: str
-    camera_width: int
-    camera_height: int
-    camera_brightness: int
-    robot_ip: str
-    robot_port: int
-    robot_login_name: str = "aubo"
-    robot_password: str = "123456"
-    sync_tolerance_ms: float
 
 class OnlineDataSource(BaseDataSource):
     def __init__(

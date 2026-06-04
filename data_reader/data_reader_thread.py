@@ -4,15 +4,9 @@ from typing import Any
 from core.logger import setup_logger
 from core.packet import FramePacket
 from core.queues import put_latest
-from .base_data_source import BaseDataSource
+from data_source.base_data_source import BaseDataSource
 import queue
-from dataclasses import dataclass, field
-from config.queue_config import QueueConfig
-
-@dataclass
-class DataReaderConfig:
-    queue_config: QueueConfig = field(
-            default_factory=QueueConfig)
+from config.data_reader_config import DataReaderThreadConfig
             
 class DataReaderThread(threading.Thread):
 
@@ -20,14 +14,14 @@ class DataReaderThread(threading.Thread):
             datasource: BaseDataSource,
             out_q: queue.Queue,
             stop_event: threading.Event,
-            cfg: DataReaderConfig = DataReaderConfig(),
+            cfg: DataReaderThreadConfig = DataReaderThreadConfig(),
             ):
         super().__init__(daemon=True)
         self.data_source = datasource
         self.out_q = out_q
         self.stop_event = stop_event
         self.cfg = cfg
-        self.logger = setup_logger('DataReader')
+        self.logger = setup_logger('DataReaderThreadConfig')
 
     def run(self):
         try:

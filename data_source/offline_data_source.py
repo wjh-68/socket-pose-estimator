@@ -8,12 +8,7 @@ from core.packet import FramePacket
 from .base_data_source import BaseDataSource
 from core.logger import setup_logger
 from dataclasses import dataclass
-
-@dataclass
-class OfflineDataSourceConfig:
-    dataset_path: str
-    read_image_nums: int = 100
-    parse_timestamp: bool = False
+from config.data_source_config import OfflineDataSourceConfig
 
 class OfflineDataSource(BaseDataSource):
     def __init__(

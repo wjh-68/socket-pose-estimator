@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from queue_config import QueueConfig
+from config.queue_config import QueueConfig
 import numpy as np
 
 @dataclass
@@ -31,11 +31,11 @@ class OptimizerConfig:
 
 @dataclass
 class PoseEstimatorConfig:
-    window_size: int = 5
     camera: CameraConfig
     object_model: ObjectModelConfig
     tracker: TrackerConfig
     optimizer: OptimizerConfig
+    window_size: int = 5
     # temp
     result_dir: str = ""
 

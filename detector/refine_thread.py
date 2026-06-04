@@ -3,20 +3,14 @@ import time
 import numpy as np
 import queue
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
 from core.queues import put_latest
 from core.logger import setup_logger
 from core.packet import FramePacket
 from core.errors import PacketValidationError
-from config.queue_config import QueueConfig
 from detector.refine_ellipses import *
+from config.refine_config import RefineThreadConfig
 
-@dataclass
-class RefineThreadConfig:
-    max_workers: int = 4
-    num_keypoints: int =7
-    queue_config: QueueConfig = field(
-        default_factory=QueueConfig)
+
 
 class RefineThread(threading.Thread):
     def __init__(self, in_q:queue.Queue, out_q:queue.Queue,
