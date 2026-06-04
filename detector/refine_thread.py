@@ -20,6 +20,7 @@ class RefineThread(threading.Thread):
         self.out_q = out_q
         self.stop_event = stop_event
         self.cfg = cfg
+        self.queue_cfg = cfg.queue_config
         self.logger = setup_logger("RefineThread")
         self.executor = ThreadPoolExecutor(
             max_workers=self.cfg.max_workers
@@ -158,12 +159,6 @@ class RefineThread(threading.Thread):
                             "received None packet, skipping")
                         continue
                     
-                    # EOF packet from upstream
-                    if getattr(packet, "eof", False):
-                        self.logger.info("received EOF packet")
-                        self.out_q.put(packet)  # pass EOF packet downstream
-                        break
-
                     # Process and add refined points to packet
                     packet = self.process(packet)
                     
@@ -173,10 +168,16 @@ class RefineThread(threading.Thread):
                             "Refinement failed for packet, skipping")
                         continue
 
-                    if self.cfg.queue_config.drop_oldest:
-                        put_latest(self.out_q, packet)
+                    if self.queue_cfg.drop_oldest:
+                        put_latest(self.out_q, packet, self.logger)
                     else:
-                        self.out_q.put(packet, block=True)                    
+                        self.out_q.put(packet, block=True, 
+                                        timeout=self.queue_cfg.put_timeout) 
+
+                     # EOF packet from upstream
+                    if getattr(packet, "eof", False):
+                        self.logger.info("received EOF packet")
+                        break                   
 
                 except Exception:
                     raise

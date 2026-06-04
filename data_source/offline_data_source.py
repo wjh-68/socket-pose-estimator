@@ -62,6 +62,7 @@ class OfflineDataSource(BaseDataSource):
                     image=img,
                     robot_pose=robot_pose
                 )
+                self.frame_id+=1
                 return packet
             except Exception as e:
                 self.logger.warning(f"Skip corrupted frame \
@@ -82,7 +83,7 @@ class OfflineDataSource(BaseDataSource):
     def _scan_files(self):
         data_dir = self.cfg.dataset_path
         if not os.path.isdir(data_dir):
-            self.logger.warning(
+            raise FileNotFoundError(
                 f"Data directory not found: {data_dir}")
             img_files = []
             npy_files = []

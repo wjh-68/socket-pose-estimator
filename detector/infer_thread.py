@@ -30,6 +30,7 @@ class InferThread(threading.Thread):
         self.out_q = out_q
         self.stop_event = stop_event
         self.cfg = cfg
+        self.queue_cfg = cfg.queue_config
         self.logger = setup_logger("InferThread")
         self.state = InferenceState.CREATED
 
@@ -101,12 +102,6 @@ class InferThread(threading.Thread):
                         "received None packet, skipping")
                     continue
                 
-                # EOF packet from upstream
-                if getattr(packet, "eof", False):
-                    self.logger.info("received EOF packet")
-                    self.out_q.put(packet)  # pass EOF packet downstream
-                    break   # finally block will be executed before breaking
-
                 if packet.image is None:
                     self.logger.warning(
                         "Skipping while no image in received packet")
@@ -125,10 +120,16 @@ class InferThread(threading.Thread):
                 packet.keypoints = keypoints
 
                 # Put results in output queue
-                if self.cfg.queue_config.drop_oldest:
+                if self.queue_cfg.drop_oldest:
                     put_latest(self.out_q, packet, self.logger)
                 else:
-                    self.out_q.put(packet, block=True)
+                    self.out_q.put(packet, block=True, 
+                                    timeout=self.queue_cfg.put_timeout)
+
+                # EOF packet from upstream
+                if getattr(packet, "eof", False):
+                    self.logger.info("received EOF packet")
+                    break   # finally block will be executed before breaking
 
             except Exception as e:
                 self.logger.exception(

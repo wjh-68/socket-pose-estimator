@@ -8,8 +8,8 @@ class FramePacket:
     # raw data
     frame_id: int
     timestamp: int # ns
-    sync_error_ms: float
     image: np.ndarray
+    sync_error_ms: Optional[float] = None
     robot_pose: np.ndarray = field(\
         default_factory=lambda: np.zeros((4, 4)))
     eof: bool = False  # end of data flag

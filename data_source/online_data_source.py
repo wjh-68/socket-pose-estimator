@@ -80,6 +80,7 @@ class OnlineDataSource(BaseDataSource):
             raise RuntimeError("Failed to login to robot")
         if not self.robot_name:
             raise RuntimeError("Failed to get robot name")
+        self.frame_id = 0
         self.state = DataSourceState.INITIALIZED
         if self.stop_event.is_set():
             raise InterruptedError()
@@ -146,11 +147,13 @@ class OnlineDataSource(BaseDataSource):
             return None
         
         packet = FramePacket(
+            frame_id=self.frame_id,
             timestamp = camera_data.timestamp_ns,
             image =camera_data.data,
             robot_pose=robot_data.data,
             sync_error_ms=time_diff_ms,
         )
+        self.frame_id += 1
 
         return packet
     

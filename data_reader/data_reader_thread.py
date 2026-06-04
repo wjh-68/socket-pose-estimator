@@ -21,7 +21,8 @@ class DataReaderThread(threading.Thread):
         self.out_q = out_q
         self.stop_event = stop_event
         self.cfg = cfg
-        self.logger = setup_logger('DataReaderThreadConfig')
+        self.queue_cfg = cfg.queue_config
+        self.logger = setup_logger('DataReaderThread')
 
     def run(self):
         try:
@@ -37,19 +38,22 @@ class DataReaderThread(threading.Thread):
                     time.sleep(0.005)  # Wait before retrying
                     continue
 
+                # Put packet into queue
+                if self.queue_cfg.drop_oldest:
+                    put_latest(self.out_q,pkt,self.logger)
+                else:
+                    self.out_q.put(pkt, block=True, 
+                                   timeout=self.queue_cfg.put_timeout)
+
                 # Offline Mode: handle EOF packet
                 if pkt.eof:
-                    self.out_q.put(pkt)  # Put EOF packet into queue for downstream to handle
+                    # Put EOF packet into queue for downstream to handle
                     self.logger.info("EOF packet received")
                     break
                 
-                if self.cfg.queue_config.drop_oldest:
-                    put_latest(self.out_q,pkt,self.logger)
-                else:
-                    self.out_q.put(pkt, block=True)
-        except Exception as e:
+        except Exception:
             self.logger.exception(
-                "DataReaderThread encountered an error: {e}")
+                "DataReaderThread encountered an error")
         finally:
             self.data_source.stop()
             self.data_source.cleanup()
