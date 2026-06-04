@@ -7,7 +7,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from static_pose_optimizer_ba import StaticPoseOptimizer, pose_to_euler_tvec
-from core.error import ConfigError
+from core.errors import ConfigError
 class Tracker:
     def __init__(self, cfg):
         # check cfg

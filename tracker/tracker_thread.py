@@ -5,7 +5,7 @@ import queue
 from concurrent.futures import ThreadPoolExecutor
 from core.logger import setup_logger
 from static_pose_optimizer_ba import StaticPoseOptimizer, load_camera_parameters
-from core.error import ConfigError, QueueError
+from core.errors import ConfigError, QueueError
 from tracker.tracker import Tracker
 
 # validate config -> two round pnp -> init/update (BA)optimizer
