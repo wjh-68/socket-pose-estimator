@@ -278,8 +278,10 @@ def load_class_names(path):
 
 
 
-def getInfer(model, image):
-
+def getInfer(model, image)->tuple[np.ndarray, np.ndarray]:
+    """
+    从模型中获取推理结果，返回 ROI 区域范围数组和关键点数组。
+    """
     results = model.infer(image)
     # 如果没有检测到任何目标，直接返回两个空的 numpy 数组
     if len(results) == 0:
@@ -321,9 +323,23 @@ def getInfer(model, image):
         return None, None
     
     first_box = boxes_list[0]
-    first_kps = keypoints_array[0] if keypoints_array.size != 0 else None
+    roi_img, roi = extract_roi(image, first_box)
+    keypoints = keypoints_array[0] if keypoints_array.size != 0 else None
 
-    return first_box, first_kps
+    return roi, keypoints
+    
+def extract_roi(img: np.ndarray, box: np.ndarray)\
+        ->tuple[np.ndarray, np.ndarray]:
+    x0, y0, x1, y1 = map(int, box[:4])
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = min(img.shape[1], x1)
+    y1 = min(img.shape[0], y1)
+    if x1 - x0 <= 0 or y1 - y0 <= 0:
+        raise ValueError("Invalid ROI bounds")
+    roi_img = img[y0:y1, x0:x1]
+    roi = np.array([x0, y0, x1, y1])
+    return roi_img, roi
 
 def getInferResults(model, image):
     results = model.infer(image)
