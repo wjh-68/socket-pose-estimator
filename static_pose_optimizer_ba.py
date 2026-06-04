@@ -19,7 +19,7 @@ from scipy.spatial.transform import Rotation
 class StaticPoseOptimizer:
     """Shared global pose + per-frame perturbation optimizer."""
 
-    def __init__(self, K, dist, prior_sigma=None, point_sigmas=None):
+    def __init__(self, K, dist, prior_sigmas=None, point_sigmas=None):
         self.K = np.array(K, dtype=np.float64)
         self.dist = np.array(dist, dtype=np.float64).flatten()
         self.eMc = np.eye(4, dtype=np.float64)
@@ -50,8 +50,8 @@ class StaticPoseOptimizer:
 
         # Default prior sigma for per-frame perturbations 
         # (rx, ry, rz in radians, tx, ty in mm, tz in mm)
-        if prior_sigma is None:
-            self.prior_sigma = np.array([
+        if prior_sigmas is None:
+            self.prior_sigmas = np.array([
                 np.deg2rad(5.0),
                 np.deg2rad(5.0),
                 np.deg2rad(1.0),
@@ -60,7 +60,7 @@ class StaticPoseOptimizer:
                 10.0
             ], dtype=np.float64)
         else:
-            self.prior_sigma = np.array(prior_sigma, dtype=np.float64)
+            self.prior_sigmas = np.array(prior_sigmas, dtype=np.float64)
 
         # Set point sigmas if provided
         if point_sigmas is not None:
@@ -243,7 +243,7 @@ class StaticPoseOptimizer:
 
         optimizer = _StaticPoseOptimizerFunctor(
             self._frames, self.K, self.dist,
-            self.eMc, self.prior_sigma, self.point_sigmas,
+            self.eMc, self.prior_sigmas, self.point_sigmas,
             self.loss, self.loss_scale,
             self.dynamic_alpha, self.max_dynamic_error, self.gross_outlier_threshold
         )
@@ -556,12 +556,12 @@ class StaticPoseOptimizer:
 
 
 class _StaticPoseOptimizerFunctor:
-    def __init__(self, frames, K, dist, eMc, prior_sigma, point_sigmas, 
+    def __init__(self, frames, K, dist, eMc, prior_sigmas, point_sigmas, 
                  loss, loss_scale, dynamic_alpha, max_dynamic_error, gross_outlier_threshold):
         self.frames = frames
         self.eMc = np.array(eMc, dtype=np.float64)
         self.eMc_inv = np.linalg.inv(self.eMc)
-        self.prior_sigma = np.array(prior_sigma, dtype=np.float64)
+        self.prior_sigmas = np.array(prior_sigmas, dtype=np.float64)
         self.point_sigmas = point_sigmas  # shape (N,), per-point base uncertainty (pixels)
         self.loss = loss
         self.loss_scale = loss_scale
@@ -618,7 +618,7 @@ class _StaticPoseOptimizerFunctor:
 
             whitened_err = err / effective_sigmas[:, np.newaxis]
             residuals.append(whitened_err.ravel())
-            residuals.append((delta / self.prior_sigma).ravel())
+            residuals.append((delta / self.prior_sigmas).ravel())
 
         if residuals:
             return np.concatenate(residuals).astype(np.float64)
@@ -786,7 +786,7 @@ def run_dataset_example(dataset_path, max_frames=16):
         [-8.0, -13.9, 0.0], [8.0, -13.9, 0.0]
     ], dtype=np.float64)
 
-    prior_sigma = np.array([
+    prior_sigmas = np.array([
         np.deg2rad(5.0),
         np.deg2rad(5.0),
         np.deg2rad(1.0),
@@ -802,7 +802,7 @@ def run_dataset_example(dataset_path, max_frames=16):
     FIXED_ERROR_THRESHOLD = 1.0
     ADAPTIVE_MULTIPLIER = 2.0
 
-    optimizer = StaticPoseOptimizer(K, dist, prior_sigma=prior_sigma, point_sigmas=point_sigmas)
+    optimizer = StaticPoseOptimizer(K, dist, prior_sigmas=prior_sigmas, point_sigmas=point_sigmas)
     optimizer.set_extrinsics(eMc)
     optimizer.set_object_pts(obj_pts)
 

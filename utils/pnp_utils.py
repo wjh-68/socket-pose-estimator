@@ -173,8 +173,8 @@ def rvec_tvec_to_transform(rvec, tvec):
 
 # convert transform mat to rvec and tvec
 def transform_to_rvec_tvec(transform):
-    rvec = np.zero(3)
-    tvec = np.zero(3)
+    rvec = np.zeros(3)
+    tvec = np.zeros(3)
     rvec = Rotation.from_matrix(transform[:3, :3]).as_rotvec()
     tvec = transform[:3, 3]
     return rvec, tvec

@@ -3,7 +3,6 @@ import time
 from typing import Iterator, Optional
 import numpy as np
 import cv2
-from skimage import data_dir
 from core.packet import FramePacket
 from .base_data_source import BaseDataSource
 from core.logger import setup_logger

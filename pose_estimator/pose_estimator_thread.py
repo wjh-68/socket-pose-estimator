@@ -23,6 +23,7 @@ class PoseEstimatorThread(threading.Thread):
         self.out_q = out_q
         self.stop_event = stop_event
         self.cfg = cfg
+        self.queue_cfg = self.cfg.queue_cfg
         self.pose_estimator = PoseEstimator(
             self.cfg.pose_estimator_cfg)
         self.logger = setup_logger("PoseEstimatorThread")
@@ -49,12 +50,24 @@ class PoseEstimatorThread(threading.Thread):
             raise PacketValidationError("ROI is None")
     
     def _process_packet(self, packet):
+        
         self._validate_packet(packet)
+
         t0 = time.perf_counter_ns()
         bMo_optimized, cMo_optimized = \
             self.pose_estimator.track(packet)
+        pose_estimation_cost_ms = \
+            (time.perf_counter_ns() - t0) / 1e6
+
         packet.timing["pose_estimation_time"] = \
-            (time.perf_counter_ns() - t0) / 1e9
+            pose_estimation_cost_ms
+        self.logger.debug(
+            f"Pose estimation cost: \
+                {pose_estimation_cost_ms:.6f} ms")
+
+        if bMo_optimized is None or cMo_optimized is None:
+            return None
+
         packet.bMo_optimized = bMo_optimized
         packet.cMo_optimized = cMo_optimized
         return packet
@@ -73,25 +86,25 @@ class PoseEstimatorThread(threading.Thread):
                         "received None packet, skipping")
                     continue
                 
-                # EOF packet from upstream
+                # Offline Mode: handle EOF packet from upstream
                 if getattr(packet, "eof", False):
+                    # Put EOF packet into queue for downstream to handle
+                    self._put_packet(packet)    
                     self.logger.info("received EOF packet")
-                    self.out_q.put(packet)
-                    break
-
+                    break   # finally block will be executed before breaking
+                
                 # Process packet from upstream
                 packet = self._process_packet(packet)
 
                 # Handle failed packet processing
                 if packet is None:
                     self.logger.error(
-                        "Packet processing failed, skipping")
+                        "Pose estimation failed, skipping")
                     continue
 
-                if self.cfg.queue_cfg.drop_oldest:
-                    put_latest(self.out_q, packet)
-                else:
-                    self.out_q.put(packet)
+                # Put packet into queue for downstream to handle
+                self._put_packet(packet)
+                
             except PacketValidationError as ve:
                 self.logger.error(
                     f"Packet validation failed: {ve}"
@@ -102,4 +115,13 @@ class PoseEstimatorThread(threading.Thread):
                 
             finally:
                 self.in_q.task_done()
-                self.logger.info("PoseEstimatorThread exited cleanly")
+
+        self.logger.info("PoseEstimatorThread exited cleanly")
+
+    def _put_packet(self, packet: FramePacket):
+        """Put packet in output queue."""
+        if self.queue_cfg.drop_oldest:
+            put_latest(self.out_q, packet, self.logger)
+        else:
+            self.out_q.put(packet, block=True, 
+                            timeout=self.queue_cfg.put_timeout)

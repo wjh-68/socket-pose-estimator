@@ -1,5 +1,6 @@
 from core.logger import setup_logger
 from core.queues import put_latest
+from core.packet import FramePacket
 from config.queue_config import QueueConfig
 import threading
 import time
@@ -62,9 +63,9 @@ class InferThread(threading.Thread):
             self.model = YOLOTRTposeInference(
                 engine_path = self.cfg.engine_path,
                 class_names = self.cfg.class_names,
-                num_kps = self.cfg.num_keypoints,
-                conf_th = self.cfg.conf_threshold,
-                iou_th = self.cfg.iou_threshold,
+                num_keypoints = self.cfg.num_keypoints,
+                conf_threshold = self.cfg.conf_threshold,
+                iou_threshold = self.cfg.iou_threshold,
                 )
             self.state = InferenceState.INITIALIZED
             self.logger.info(
@@ -102,12 +103,27 @@ class InferThread(threading.Thread):
                         "received None packet, skipping")
                     continue
                 
+                # Offline Mode: handle EOF packet from upstream
+                if getattr(packet, "eof", False):
+                    # Put EOF packet into queue for downstream to handle
+                    self._put_packet(packet)    
+                    self.logger.info("received EOF packet")
+                    break   # finally block will be executed before breaking
+                
+                # Handle abnormal packet with no image
                 if packet.image is None:
                     self.logger.warning(
                         "Skipping while no image in received packet")
                     continue
+
                 # Run inference with TRT model
+                t0 = time.perf_counter_ns()
                 roi, keypoints = getInfer(self.model, packet.image)
+                infer_cost_ms = (time.perf_counter_ns() - t0) / 1e6
+                self.logger.debug(
+                    f"Inference cost: {infer_cost_ms:.4f} ms")
+                packet.timing['infer'] = infer_cost_ms
+                
                 if roi is None or keypoints is None:
                     self.logger.warning("Inference returned no detections")
                     continue
@@ -120,16 +136,7 @@ class InferThread(threading.Thread):
                 packet.keypoints = keypoints
 
                 # Put results in output queue
-                if self.queue_cfg.drop_oldest:
-                    put_latest(self.out_q, packet, self.logger)
-                else:
-                    self.out_q.put(packet, block=True, 
-                                    timeout=self.queue_cfg.put_timeout)
-
-                # EOF packet from upstream
-                if getattr(packet, "eof", False):
-                    self.logger.info("received EOF packet")
-                    break   # finally block will be executed before breaking
+                self._put_packet(packet)
 
             except Exception as e:
                 self.logger.exception(
@@ -138,6 +145,14 @@ class InferThread(threading.Thread):
                 self.in_q.task_done()
 
         self._cleanup()
+    
+    def _put_packet(self, packet: FramePacket):
+        """Put packet in output queue."""
+        if self.queue_cfg.drop_oldest:
+            put_latest(self.out_q, packet, self.logger)
+        else:
+            self.out_q.put(packet, block=True, 
+                            timeout=self.queue_cfg.put_timeout)
 
     def _cleanup(self):
         """Release GPU resources and model safely."""

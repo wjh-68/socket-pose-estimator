@@ -18,13 +18,13 @@ class PoseEstimator:
         # TODO: 优化 StaticPoseOptimizer 接口
         self.optimizer = StaticPoseOptimizer(
             K=self.K, dist=self.dist,
-            prior_sigma=self.cfg.optimizer.prior_sigmas,
-            point_sigma=self.cfg.optimizer.point_sigmas,
+            prior_sigmas=self.cfg.optimizer.prior_sigmas,
+            point_sigmas=self.cfg.optimizer.point_sigmas,
         )
         self.optimizer.set_extrinsics(self.eMc)
         self.optimizer.set_object_pts(self.obj_pts)
         self.logger = setup_logger("PoseEstimator")
-
+        self._reset_statistics()
         # Temp
         self.result_dir = self.cfg.result_dir
 
@@ -102,8 +102,8 @@ class PoseEstimator:
         roi = packet.roi
         inlier_mask = pnp_result.diagnostics.inlier_mask
 
-        self._render_frame(image,roi,refined_pts2d,self.obj_pts,
-                           cMo_optimized,inlier_mask,frame_id)
+        # self._render_frame(image,roi,refined_pts2d,self.obj_pts,
+        #                    cMo_optimized,inlier_mask,frame_id)
         # TODO: Move visualization and data record to new threads
 
         return bMo_optimized, cMo_optimized

@@ -25,6 +25,9 @@ class RefineThread(threading.Thread):
         self.executor = ThreadPoolExecutor(
             max_workers=self.cfg.max_workers
         )
+        self.cnt_refine_failed = 0
+        self.cnt_process_total = 0
+
 
     def _extract_sub_roi(self, image, keypoints)-> tuple:
         """Extract sub-ROI images ans top-left corners 
@@ -88,11 +91,14 @@ class RefineThread(threading.Thread):
                 "Failed to extract sub-ROIs for refinement")
             raise
         t0 = time.perf_counter_ns()
+        self.cnt_process_total += 1
         results = list(self.executor.map(
             detect_and_refine_ellipses, sub_roi_imgs))
-        self.logger.info(
+        detect_and_refine_cost_ms = \
+            (time.perf_counter_ns() - t0) / 1e6
+        self.logger.debug(
             f"threadpool exec detect_and_refine_ellipses time: \
-                {(time.perf_counter_ns() - t0) / 1e6:.2f}ms")    
+                {detect_and_refine_cost_ms:.2f}ms")    
         refined_pts = []
         for i, res in enumerate(results):
             if res is not None:
@@ -102,18 +108,24 @@ class RefineThread(threading.Thread):
         return np.asarray(refined_pts)
 
     def process(self, packet:FramePacket):
-        t0 = time.time()
         self._validate_packet(packet)
         
         try:
+            t0 = time.perf_counter_ns()
             refined_pts = self._refine_point(
                 packet.image, packet.keypoints)
+            refine_cost_ms = (time.perf_counter_ns() - t0) / 1e6
+            packet.timing['refine'] = refine_cost_ms
+            self.logger.debug(
+                f"Refine cost: {refine_cost_ms:.4f} ms")
         except Exception:
             self.logger.warning("Refinement failed")
+            self.cnt_refine_failed += 1
             raise
 
         # check dims
         if refined_pts.shape != (self.cfg.num_keypoints,2):
+            self.cnt_refine_failed += 1
             self.logger.warning(
                 f"Expect refined keypoints shape is \
                 {self.cfg.num_keypoints}x2, \
@@ -125,9 +137,6 @@ class RefineThread(threading.Thread):
             #         but got {refined_pts.shape}")
         
         packet.refined_pts2d = refined_pts
-        packet.timing['refine'] = (time.time() - t0) * 1000.0
-        self.logger.info(
-            f"refine time: {packet.timing['refine']:.2f}ms")
         return packet
     
     def _validate_packet(self, packet:FramePacket):
@@ -159,6 +168,13 @@ class RefineThread(threading.Thread):
                             "received None packet, skipping")
                         continue
                     
+                    # Offline Mode: handle EOF packet from upstream
+                    if getattr(packet, "eof", False):
+                        # Put EOF packet into queue for downstream to handle
+                        self._put_packet(packet)    
+                        self.logger.info("received EOF packet")
+                        break   # finally block will be executed before breaking
+                
                     # Process and add refined points to packet
                     packet = self.process(packet)
                     
@@ -167,17 +183,8 @@ class RefineThread(threading.Thread):
                         self.logger.warning(
                             "Refinement failed for packet, skipping")
                         continue
-
-                    if self.queue_cfg.drop_oldest:
-                        put_latest(self.out_q, packet, self.logger)
-                    else:
-                        self.out_q.put(packet, block=True, 
-                                        timeout=self.queue_cfg.put_timeout) 
-
-                     # EOF packet from upstream
-                    if getattr(packet, "eof", False):
-                        self.logger.info("received EOF packet")
-                        break                   
+                    # Put packet into queue
+                    self._put_packet(packet)
 
                 except Exception:
                     raise
@@ -188,4 +195,14 @@ class RefineThread(threading.Thread):
                 "RefineThread error")
         finally:
             self.executor.shutdown()
-            self.logger.info("RefineThread exited cleanly")
+            self.logger.info(
+                f"RefineThread exited cleanly, \
+                {self.cnt_refine_failed}/{self.cnt_process_total} failed")
+
+    def _put_packet(self, packet: FramePacket):
+        """Put packet in output queue."""
+        if self.queue_cfg.drop_oldest:
+            put_latest(self.out_q, packet, self.logger)
+        else:
+            self.out_q.put(packet, block=True, 
+                            timeout=self.queue_cfg.put_timeout)

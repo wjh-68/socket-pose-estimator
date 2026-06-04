@@ -18,11 +18,11 @@ data_source:
 data_reader:
   queue_config:
     maxsize: 10
-    drop_oldest: true
+    drop_oldest: false
     put_timeout: 0.2
 
 infer:
-  engine_path: "models/yolo_pose_port513.pt"
+  engine_path: checkpoint/best.engine
   class_names:
     - object
   num_keypoints: 7
@@ -30,7 +30,7 @@ infer:
   iou_threshold: 0.45
   queue_config:
     maxsize: 10
-    drop_oldest: true
+    drop_oldest: false
     put_timeout: 0.2
 
 refine:
@@ -38,7 +38,7 @@ refine:
   num_keypoints: 7
   queue_config:
     maxsize: 10
-    drop_oldest: true
+    drop_oldest: false
     put_timeout: 0.2
 
 pose_estimator:

@@ -6,9 +6,12 @@ from core.logger import setup_logger
 from data_source.factory import build_datasource
 from data_reader.data_reader_thread \
     import DataReaderThread, DataReaderThreadConfig
-from detector.infer_thread import InferThread, InferThreadConfig
-# from detector.refine_thread import RefineThread, RefineThreadConfig
-# from pose_estimator.pose_estimator_thread import PoseEstimatorThread, PoseEstimatorThreadConfig
+from detector.infer_thread \
+    import InferThread, InferThreadConfig
+from detector.refine_thread \
+    import RefineThread, RefineThreadConfig
+from pose_estimator.pose_estimator_thread \
+    import PoseEstimatorThread, PoseEstimatorThreadConfig
 # from core.queues import create_queues
 from config.app_config import AppConfig
 from config.data_source_config import DataSourceConfig
@@ -43,10 +46,26 @@ def main():
         stop_event,
         app_cfg.infer,
     )
+
+    refine_thread = RefineThread(
+        queues["infered_queue"],
+        queues["refined_queue"],
+        stop_event,
+        app_cfg.refine,
+    )
     
-    # Start
+    pose_estimator_thread = PoseEstimatorThread(
+        queues["refined_queue"],
+        queues["result_queue"],
+        stop_event,
+        app_cfg.pose_estimator,
+    )
+    
+    # Start threads
     data_reader_thread.start()
     infer_thread.start()
+    refine_thread.start()
+    pose_estimator_thread.start()
 
 
     # Wait for user to interrupt
@@ -59,6 +78,8 @@ def main():
     # Join threads
     data_reader_thread.join()
     infer_thread.join()
+    refine_thread.join()
+    pose_estimator_thread.join()
     
 
     logger.info("Shutdown complete")

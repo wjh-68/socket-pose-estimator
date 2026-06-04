@@ -29,28 +29,30 @@ class DataReaderThread(threading.Thread):
             self.data_source.initialize()
             self.data_source.start()
             while not self.stop_event.is_set():
-                pkt = self.data_source.get_packet()
+                t0 = time.perf_counter_ns()
+                packet = self.data_source.get_packet()
+                read_cost_ms = (time.perf_counter_ns() - t0) / 1e6
+                self.logger.debug(
+                    f"Read data cost: {read_cost_ms:.4f} ms")
+                packet.timing['read_data'] = read_cost_ms
 
                 # Online Mode: wait when no data is available
-                if pkt is None:
+                if packet is None:
                     self.logger.info(
                         "Data source returned None, waiting")
                     time.sleep(0.005)  # Wait before retrying
                     continue
 
-                # Put packet into queue
-                if self.queue_cfg.drop_oldest:
-                    put_latest(self.out_q,pkt,self.logger)
-                else:
-                    self.out_q.put(pkt, block=True, 
-                                   timeout=self.queue_cfg.put_timeout)
-
-                # Offline Mode: handle EOF packet
-                if pkt.eof:
+                 # Offline Mode: handle EOF packet from upstream
+                if getattr(packet, "eof", False):
                     # Put EOF packet into queue for downstream to handle
-                    self.logger.info("EOF packet received")
-                    break
-                
+                    self._put_packet(packet)    
+                    self.logger.info("received EOF packet")
+                    break   # finally block will be executed before breaking
+
+                # Put packet into queue
+                self._put_packet(packet)
+
         except Exception:
             self.logger.exception(
                 "DataReaderThread encountered an error")
@@ -60,3 +62,10 @@ class DataReaderThread(threading.Thread):
             self.logger.info(
                 "DataReaderThread stopped and cleaned up")
             
+    def _put_packet(self, packet: FramePacket):
+        """Put packet in output queue."""
+        if self.queue_cfg.drop_oldest:
+            put_latest(self.out_q, packet, self.logger)
+        else:
+            self.out_q.put(packet, block=True, 
+                            timeout=self.queue_cfg.put_timeout)
