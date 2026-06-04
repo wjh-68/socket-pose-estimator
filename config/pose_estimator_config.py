@@ -38,4 +38,8 @@ class PoseEstimatorConfig:
     optimizer: OptimizerConfig
     # temp
     result_dir: str = ""
-    # queue: QueueConfig
+
+@dataclass
+class PoseEstimatorThreadConfig:
+    pose_estimator_cfg: PoseEstimatorConfig
+    queue_cfg: QueueConfig = field(default_factory=lambda: QueueConfig())

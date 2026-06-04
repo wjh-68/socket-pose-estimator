@@ -26,7 +26,8 @@ class FramePacket:
     reproj_errs: Optional[np.ndarray] = None
     valid_mask: Optional[np.ndarray] = None
 
-    optimized_pose: Optional[np.ndarray] = None
+    bMo_optimized: Optional[np.ndarray] = None
+    cMo_optimized: Optional[np.ndarray] = None
 
     debug_image: Optional[np.ndarray] = None
 

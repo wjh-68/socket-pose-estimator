@@ -43,14 +43,14 @@ class PoseEstimator:
 
         # Temp
         frame_id = packet.frame_id
-        keypoints = packet.keypoints
+        refined_pts2d = packet.refined_pts2d
         image = packet.image
         robot_pose = packet.robot_pose
         
         # PnP estimate camera pose
         # two round PnP for better initial pose in optimization
         pnp_result = two_round_pnp(
-            keypoints, self.obj_pts, self.K, self.dist,
+            refined_pts2d, self.obj_pts, self.K, self.dist,
             self.cfg.tracker.reproj_error_threshold,
             self.cfg.tracker.use_adaptive_threshold,
             self.cfg.tracker.adaptive_multiplier,
@@ -61,7 +61,7 @@ class PoseEstimator:
             self.logger.warning(
                 f"PnP failed: {pnp_result.reason}"
             )
-            return None
+            return None, None
         
         # T_co
         cMo_pnp = rvec_tvec_to_transform(
@@ -78,7 +78,7 @@ class PoseEstimator:
         # Filter frame
         if self._should_reject_pose_diff(cMo_pnp, robot_pose):
             self.cnt_rejected_frames += 1
-            return None
+            return None, None
         
         # Manage sliding window
         if self.optimizer.get_frame_count() >= self.cfg.window_size:
@@ -86,7 +86,7 @@ class PoseEstimator:
 
         # Add frame
         self.optimizer.add_frame(
-            frame_id, robot_pose, keypoints,self.obj_pts)
+            frame_id, robot_pose, refined_pts2d,self.obj_pts)
         
         # Optimize
         self.optimizer.optimize()
@@ -102,7 +102,7 @@ class PoseEstimator:
         roi = packet.roi
         inlier_mask = pnp_result.diagnostics.inlier_mask
 
-        self._render_frame(image,roi,keypoints,self.obj_pts,
+        self._render_frame(image,roi,refined_pts2d,self.obj_pts,
                            cMo_optimized,inlier_mask,frame_id)
         # TODO: Move visualization and data record to new threads
 
@@ -154,10 +154,6 @@ class PoseEstimator:
         vis_result_path = os.path.join(
             self.result_dir, f"frame_{frame_id:06d}_vis_result.png")
         cv2.imwrite(vis_result_path, vis_result)
-
-
-        
-        
 
 
     def _should_reject_pose_diff(self, cMo, robot_pose):
