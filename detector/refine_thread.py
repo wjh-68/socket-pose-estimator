@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from core.queues import put_latest
 from core.logger import setup_logger
 from core.packet import FramePacket
+from core.errors import PacketValidationError
 from config.queue_config import QueueConfig
 from detector.refine_ellipses import *
 
@@ -107,12 +108,7 @@ class RefineThread(threading.Thread):
 
     def process(self, packet:FramePacket):
         t0 = time.time()
-        try:
-            self._validate_packet(packet)
-        except Exception:
-            self.logger.warning(
-                f"Invalid packet for refinement")
-            raise
+        self._validate_packet(packet)
         
         try:
             refined_pts = self._refine_point(
@@ -142,14 +138,16 @@ class RefineThread(threading.Thread):
     def _validate_packet(self, packet:FramePacket):
         kp = packet.keypoints
         if packet.image is None:
-            raise ValueError("packet.image is None")
+            raise PacketValidationError(
+                "packet.image is None")
         if not isinstance(kp, np.ndarray):
-            raise ValueError(
+            raise PacketValidationError(
                 "packet.keypoints is not numpy array")
         if kp.shape != (self.cfg.num_keypoints,2):
-            raise ValueError(f"expect keypoints shape is\
-                             {self.cfg.num_keypoints}x2,\
-                             but got {kp.shape}")
+            raise PacketValidationError(
+                f"expect keypoints shape is \
+                {self.cfg.num_keypoints}x2,\
+                but got {kp.shape}")
 
     def run(self):
         try:
