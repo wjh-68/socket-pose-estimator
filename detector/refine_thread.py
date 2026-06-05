@@ -92,13 +92,20 @@ class RefineThread(threading.Thread):
             raise
         t0 = time.perf_counter_ns()
         self.cnt_process_total += 1
-        results = list(self.executor.map(
-            detect_and_refine_ellipses, sub_roi_imgs))
-        detect_and_refine_cost_ms = \
-            (time.perf_counter_ns() - t0) / 1e6
+        # refine points in serial
+        t0 = time.perf_counter_ns()
+        results = list([detect_and_refine_ellipses(img) for img in sub_roi_imgs])
+        refine_serial_cost_ms = (time.perf_counter_ns() - t0) / 1e6
         self.logger.debug(
-            f"threadpool exec detect_and_refine_ellipses time: \
-                {detect_and_refine_cost_ms:.2f}ms")    
+            f"refine_serial_cost_ms: {refine_serial_cost_ms:.2f}ms")
+        # # refine points in parallel
+        # t0 = time.perf_counter_ns()
+        # results = list(self.executor.map(
+        #     detect_and_refine_ellipses, sub_roi_imgs))
+        # refine_parallel_cost_ms = \
+        #     (time.perf_counter_ns() - t0) / 1e6
+        # self.logger.debug(
+        #     f"refine_parallel_cost_ms: {refine_parallel_cost_ms:.2f}ms")    
         refined_pts = []
         for i, res in enumerate(results):
             if res is not None:
