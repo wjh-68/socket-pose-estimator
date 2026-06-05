@@ -1,7 +1,7 @@
 import threading
 import time
 from typing import Any
-from core.logger import setup_logger
+from core.logger import get_logger
 from core.packet import FramePacket
 from core.queues import put_latest
 from data_source.base_data_source import BaseDataSource
@@ -22,7 +22,7 @@ class DataReaderThread(threading.Thread):
         self.stop_event = stop_event
         self.cfg = cfg
         self.queue_cfg = cfg.queue_config
-        self.logger = setup_logger('DataReaderThread')
+        self.logger = get_logger('data_reader_thread')
 
     def run(self):
         try:

@@ -5,7 +5,7 @@ from scipy.spatial.transform import Rotation
 from static_pose_optimizer_ba import StaticPoseOptimizer
 from config.pose_estimator_config import PoseEstimatorConfig
 from utils.pnp_utils import *
-from core.logger import setup_logger
+from core.logger import get_logger
 from core.packet import FramePacket
 
 class PoseEstimator:
@@ -23,7 +23,7 @@ class PoseEstimator:
         )
         self.optimizer.set_extrinsics(self.eMc)
         self.optimizer.set_object_pts(self.obj_pts)
-        self.logger = setup_logger("PoseEstimator")
+        self.logger = get_logger("pose_estimator")
         self._reset_statistics()
         # Temp
         self.result_dir = self.cfg.result_dir

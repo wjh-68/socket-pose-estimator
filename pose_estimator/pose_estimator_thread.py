@@ -4,7 +4,7 @@ from collections import deque
 import numpy as np
 import queue
 from dataclasses import dataclass, field
-from core.logger import setup_logger
+from core.logger import get_logger
 from core.queues import put_latest
 from core.packet import FramePacket
 from core.errors import PacketValidationError, PacketProcessingError
@@ -26,7 +26,7 @@ class PoseEstimatorThread(threading.Thread):
         self.queue_cfg = self.cfg.queue_cfg
         self.pose_estimator = PoseEstimator(
             self.cfg.pose_estimator_cfg)
-        self.logger = setup_logger("PoseEstimatorThread")
+        self.logger = get_logger("pose_estimator_thread")
 
     def _validate_packet(self, packet:FramePacket):
         if packet.refined_pts2d is None:

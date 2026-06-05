@@ -6,7 +6,7 @@ from collections import deque
 from scipy.spatial.transform import Rotation
 from core.packet import FramePacket
 from .base_data_source import BaseDataSource
-from core.logger import setup_logger
+from core.logger import get_logger
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
@@ -39,7 +39,7 @@ class OnlineDataSource(BaseDataSource):
     ):
         super().__init__(cfg)
         self.stop_event = stop_event
-        self.logger = setup_logger(__name__)
+        self.logger = get_logger(__name__)
         self.state = DataSourceState.CREATED
 
     def initialize(self):

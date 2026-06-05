@@ -1,22 +1,76 @@
 import logging
-from typing import Optional
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 
-def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
-    """Create or return a logger configured with a StreamHandler.
+_CONFIGURED = False
 
-    Avoid adding duplicate handlers when called multiple times.
+
+def setup_logger(
+    level: int = logging.INFO,
+    log_dir: str = "logs",
+    log_file: str = "pipeline.log",
+) -> None:
     """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
+    Configure root logger once.
 
-    if not getattr(logger, "__configured", False):
-        ch = logging.StreamHandler()
-        ch.setLevel(level)
-        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-        ch.setFormatter(fmt)
-        logger.addHandler(ch)
-        logger.propagate = False
-        logger.__configured = True
+    Console:
+        INFO+
 
-    return logger
+    File:
+        DEBUG+
+    """
+    global _CONFIGURED
+
+    if _CONFIGURED:
+        return
+
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+
+    logfile = Path(log_dir) / log_file
+
+    root = logging.getLogger()
+    # logger 只接受 DEBUG 以上
+    root.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter(
+        fmt=(
+            "%(asctime)s "
+            "%(levelname)-8s "
+            "[%(threadName)s] "
+            "%(name)s: "
+            "%(message)s"
+        ),
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    #
+    # Console
+    #
+    # 终端显示 INFO+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    console_handler.setFormatter(formatter)
+
+    #
+    # File
+    #
+    file_handler = RotatingFileHandler(
+        logfile,
+        maxBytes=20 * 1024 * 1024,  # 20MB
+        backupCount=5,
+        encoding="utf-8",
+    )
+
+    # 文件记录 DEBUG+
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+
+    root.addHandler(console_handler)
+    root.addHandler(file_handler)
+
+    _CONFIGURED = True
+
+
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)

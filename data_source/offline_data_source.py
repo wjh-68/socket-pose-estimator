@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 from core.packet import FramePacket
 from .base_data_source import BaseDataSource
-from core.logger import setup_logger
+from core.logger import get_logger
 from dataclasses import dataclass
 from config.data_source_config import OfflineDataSourceConfig
 
@@ -15,7 +15,7 @@ class OfflineDataSource(BaseDataSource):
             cfg: OfflineDataSourceConfig,
     ):
         super().__init__(cfg)
-        self.logger = setup_logger(__name__)
+        self.logger = get_logger(__name__)
 
     def initialize(self):
         self._scan_files()

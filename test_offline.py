@@ -2,7 +2,7 @@ import threading
 import time
 import yaml
 from queue import Queue
-from core.logger import setup_logger
+from core.logger import setup_logger, get_logger
 from data_source.factory import build_datasource
 from data_reader.data_reader_thread \
     import DataReaderThread, DataReaderThreadConfig
@@ -18,7 +18,10 @@ from config.data_source_config import DataSourceConfig
 
 def main():
 
-    logger = setup_logger('test_offline')
+    setup_logger()
+    logger = get_logger("test_offline")
+    logger.info("pipeline start")
+    
     app_cfg = AppConfig.from_yaml(
         "config/offline_test.yaml")
     stop_event = threading.Event()

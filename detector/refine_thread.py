@@ -4,7 +4,7 @@ import numpy as np
 import queue
 from concurrent.futures import ThreadPoolExecutor
 from core.queues import put_latest
-from core.logger import setup_logger
+from core.logger import get_logger
 from core.packet import FramePacket
 from core.errors import PacketValidationError
 from detector.refine_ellipses import *
@@ -21,7 +21,7 @@ class RefineThread(threading.Thread):
         self.stop_event = stop_event
         self.cfg = cfg
         self.queue_cfg = cfg.queue_config
-        self.logger = setup_logger("RefineThread")
+        self.logger = get_logger("refine_thread")
         self.executor = ThreadPoolExecutor(
             max_workers=self.cfg.max_workers
         )

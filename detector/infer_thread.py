@@ -1,4 +1,4 @@
-from core.logger import setup_logger
+from core.logger import get_logger
 from core.queues import put_latest
 from core.packet import FramePacket
 from config.queue_config import QueueConfig
@@ -32,7 +32,7 @@ class InferThread(threading.Thread):
         self.stop_event = stop_event
         self.cfg = cfg
         self.queue_cfg = cfg.queue_config
-        self.logger = setup_logger("InferThread")
+        self.logger = get_logger("infer_thread")
         self.state = InferenceState.CREATED
 
         # Dont load model here(main thread), defer to run()  
