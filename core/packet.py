@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 import numpy as np
-
+from pose_estimator.pose_estimator import PoseEstimatorResult
 
 @dataclass
 class FramePacket:
@@ -11,26 +11,19 @@ class FramePacket:
     image: np.ndarray
     sync_error_ms: Optional[float] = None
     robot_pose: np.ndarray = field(\
-        default_factory=lambda: np.zeros((4, 4)))
+        default_factory=lambda: np.identity(4))
     eof: bool = False  # end of data flag
 
-    # inference results
+    # inference result
     roi: Optional[Any] = None
     keypoints: Optional[np.ndarray] = None
 
-    # refinement results
+    # refinement result
     refined_pts2d: Optional[np.ndarray] = None
 
-    # tracking results
+    # pose estimatation result
+    pose_est_result: Optional[PoseEstimatorResult] = None
     
-    reproj_errs: Optional[np.ndarray] = None
-    valid_mask: Optional[np.ndarray] = None
-
-    bMo_optimized: Optional[np.ndarray] = None
-    cMo_optimized: Optional[np.ndarray] = None
-
-    debug_image: Optional[np.ndarray] = None
-
     # profiling info
     timing: Dict[str, float] = field(default_factory=dict)
     valid: bool = True

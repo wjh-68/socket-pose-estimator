@@ -67,7 +67,7 @@ class PnPResult:
     tvec: np.ndarray = None
     inlier_mask: np.ndarray = None
     reproj_errs: np.ndarray = None
-    ave_reproj_err: float = None
+    avg_reproj_err: float = None
     round1_reproj_errs: np.ndarray = None
     used_threshold: float = None
     
@@ -114,13 +114,12 @@ def two_round_pnp(
     """
     rvec1, tvec1, valid1, reason = solvePnP_IPPE(pts2d, pts3d, K, dist)
     if not valid1:
-        return PnPResult(
-            valid=False, reason=reason, rvec=rvec1, tvec=tvec1)
+        return PnPResult(valid=False, reason=reason)
 
     # Round 1: compute reprojection errors
     reproj_errs_round1 = compute_per_point_reproj_errs(
         pts3d, rvec1, tvec1, pts2d, K, dist)
-    ave_err_round1 = reproj_errs_round1.mean()
+    avg_err_round1 = reproj_errs_round1.mean()
 
     # Compute threshold for inlier selection
     if use_adaptive_threshold:
@@ -142,25 +141,23 @@ def two_round_pnp(
         if valid2:
             reproj_errs_round2 = compute_per_point_reproj_errs(
                 pts3d, rvec2, tvec2, pts2d_inlier, K, dist)
-            ave_err_round2 = reproj_errs_round2.mean()
+            avg_err_round2 = reproj_errs_round2.mean()
 
             return PnPResult(
                 valid=True, reason="", rvec=rvec2, tvec=tvec2, \
-                inlier_mask=inlier_mask, reproj_errs=reproj_errs_round2, ave_reproj_err=ave_err_round2, \
+                inlier_mask=inlier_mask, reproj_errs=reproj_errs_round2, avg_reproj_err=avg_err_round2, \
                 round1_reproj_errs=reproj_errs_round1, used_threshold=current_threshold)
         else:
             return PnPResult(
-                valid=False, reason=reason2, inlier_mask=None, reproj_errs=None, ave_reproj_err=0.0, \
-                round1_reproj_errs=None, used_threshold=None)
+                valid=False, reason=reason2)
             # return PnPResult(
-            #     valid=False, reason=reason2, inlier_mask=None, reproj_errs=None, ave_reproj_err=0.0, \
+            #     valid=False, reason=reason2, inlier_mask=None, reproj_errs=None, avg_reproj_err=0.0, \
             #     round1_reproj_errs=None, used_threshold=None)
     # Fallback: return round1 results
     return PnPResult(
         valid=True, reason="", rvec=rvec1, tvec=tvec1, \
-        diagnostics=PnPDiagnostics(
-            inlier_mask, reproj_errs_round1, ave_err_round1, \
-            reproj_errs_round1, current_threshold))
+        inlier_mask = inlier_mask, reproj_errs = reproj_errs_round1, avg_reproj_err = avg_err_round1, \
+        round1_reproj_errs = reproj_errs_round1, used_threshold = current_threshold)
 
 def rvec_tvec_to_transform(rvec, tvec):
     """Convert rotation vector and translation vector to 4x4 transformation matrix.

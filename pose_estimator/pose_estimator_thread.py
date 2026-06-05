@@ -49,12 +49,12 @@ class PoseEstimatorThread(threading.Thread):
         if packet.roi is None:
             raise PacketValidationError("ROI is None")
     
-    def _process_packet(self, packet):
+    def _process_packet(self, packet:FramePacket):
         
         self._validate_packet(packet)
 
         t0 = time.perf_counter_ns()
-        bMo_optimized, cMo_optimized = \
+        pose_estimator_result = \
             self.pose_estimator.track(packet)
         pose_estimation_cost_ms = \
             (time.perf_counter_ns() - t0) / 1e6
@@ -65,11 +65,7 @@ class PoseEstimatorThread(threading.Thread):
             f"Pose estimation cost: \
                 {pose_estimation_cost_ms:.6f} ms")
 
-        if bMo_optimized is None or cMo_optimized is None:
-            return None
-
-        packet.bMo_optimized = bMo_optimized
-        packet.cMo_optimized = cMo_optimized
+        packet.pose_est_result = pose_estimator_result
         return packet
     
     def run(self):

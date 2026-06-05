@@ -18,19 +18,12 @@ class OptimizerResult:
 
 @dataclass(slots=True)
 class PoseEstimatorResult:
+    valid: bool
+    reason: str = ""
     # Optimized result
-    bMo_opt: np.ndarray
-    cMc_opt: np.ndarray
-    reproj_errs_opt: np.ndarray
-    avg_reproj_err_opt: float = 0.0
-    
+    optimized: OptimizerResult = None
     # PnP result
-    bMo_pnp: np.ndarray
-    cMc_pnp: np.ndarray
-    inlier_mask: np.ndarray
-    reproj_errs_pnp: np.ndarray
-    reproj_errs_round1: np.ndarray
-    avg_reproj_err_pnp: float = 0.0
+    pnp: PnPResult = None
 
 
 class PoseEstimator:
@@ -81,7 +74,10 @@ class PoseEstimator:
             self.logger.warning(
                 f"PnP failed: {pnp_result.reason}"
             )
-            return None, None
+            return PoseEstimatorResult(
+                valid = False, reason= "PnP failed",
+                optimized = None, pnp = pnp_result
+            )
         
         # T_co
         cMo_pnp = rvec_tvec_to_transform(
@@ -93,12 +89,14 @@ class PoseEstimator:
         # Initialize pose
         if not self.optimizer.is_initialized():
             self.optimizer.set_initial_pose(bMo_pnp)
-            # return bMo_pnp
 
         # Filter frame
-        if self._should_reject_pose_diff(cMo_pnp, robot_pose):
+        if self._should_reject_pose_diff(bMo_pnp):
             self.cnt_rejected_frames += 1
-            return None, None
+            return PoseEstimatorResult(
+                valid = False, reason = "Rejected because large pose diff",
+                optimized = None, pnp = pnp_result
+            )
         
         # Manage sliding window
         if self.optimizer.get_frame_count() >= self.cfg.window_size:
@@ -122,18 +120,13 @@ class PoseEstimator:
         avg_reproj_err_opt = float(np.mean(reproj_errs_opt))
 
         # Generate result
-        result = PoseEstimatorResult(
-            bMo_optimized,
-            cMo_optimized,
-            reproj_errs_opt,
-            avg_reproj_err_opt,
-            bMo_pnp,
-            cMo_pnp,
-            pnp_result.diagnostics.inlier_mask,
-            pnp_result.diagnostics.reproj_errs,
-            pnp_result.diagnostics.round1_reproj_errs,
-            np.mean(pnp_result.diagnostics.reproj_errs),
+        optimizer_result = OptimizerResult(
+            bMo_optimized, cMo_optimized, reproj_errs_opt,avg_reproj_err_opt
         )
+        result = PoseEstimatorResult(
+            valid = True, str = "", 
+            optimized = optimizer_result,
+            pnp = pnp_result)
 
 
         # Temp: Record data for analysis and diagnostics
@@ -146,7 +139,7 @@ class PoseEstimator:
         #                    cMo_optimized,inlier_mask,frame_id)
         # TODO: Move visualization and data record to new threads
 
-        return bMo_optimized, cMo_optimized
+        return result
 
 
     def _render_frame(
@@ -195,16 +188,15 @@ class PoseEstimator:
             self.result_dir, f"frame_{frame_id:06d}_vis_result.png")
         cv2.imwrite(vis_result_path, vis_result)
 
-
-    def _should_reject_pose_diff(self, cMo, robot_pose):
+    def _shold_reject_pose_diff(self, bMo_pnp):
         if self.last_bMo is None:
             return False
+        oMb_pnp = np.linalg.inv(bMo_pnp)
+        last_oMb = np.linalg.inv(self.last_bMo)
+        tvec_diff = oMb_pnp[:3,3]-last_oMb[:3,3]
+        pos_diff = float(np.linalg.norm(tvec_diff))
 
-        cMo_before = np.linalg.inv(self.eMc) @ np.linalg.inv(robot_pose) @ self.last_bMo
-        tvec_before = cMo_before[:3, 3]
-        pos_diff = float(np.linalg.norm(cMo[:3, 3] - tvec_before))
-
-        rot_mat_diff = cMo[:3, :3] @ cMo_before[:3, :3].T
+        rot_mat_diff = self.last_bMo @ last_oMb
         rot_vec_diff = Rotation.from_matrix(rot_mat_diff).as_rotvec()
         rot_diff = float(np.degrees(np.linalg.norm(rot_vec_diff)))
 
