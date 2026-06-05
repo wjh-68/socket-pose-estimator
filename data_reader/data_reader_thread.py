@@ -16,7 +16,7 @@ class DataReaderThread(threading.Thread):
             stop_event: threading.Event,
             cfg: DataReaderThreadConfig = DataReaderThreadConfig(),
             ):
-        super().__init__(daemon=True)
+        super().__init__(name="DataReaderThread", daemon=True)
         self.data_source = datasource
         self.out_q = out_q
         self.stop_event = stop_event

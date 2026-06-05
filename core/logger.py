@@ -54,11 +54,12 @@ def setup_logger(
 
     #
     # File
-    #
+    # 
     file_handler = RotatingFileHandler(
         logfile,
-        maxBytes=20 * 1024 * 1024,  # 20MB
-        backupCount=5,
+        mode = "a", # 追加模式，新日志写入文件末尾
+        maxBytes=20 * 1024 * 1024,  # 20MB自动轮转
+        backupCount=5,  # 保留5个备份
         encoding="utf-8",
     )
 

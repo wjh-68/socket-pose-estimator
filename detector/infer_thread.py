@@ -26,7 +26,7 @@ class InferThread(threading.Thread):
     """
     def __init__(self, in_q: queue.Queue, out_q: queue.Queue,
                  stop_event: threading.Event, cfg: InferThreadConfig):
-        super().__init__(daemon=False)
+        super().__init__(name="InferThread", daemon=False)
         self.in_q = in_q
         self.out_q = out_q
         self.stop_event = stop_event
