@@ -46,37 +46,30 @@ def solvePnP_IPPE(pts2d, pts3d, K, dist, min_depth=50, max_depth=3000):
 # -----------------------------
 # Reprojection Errors
 # -----------------------------
-def compute_per_point_reproj_errors(pts3d, rvec, tvec, pts2d, K, dist):
+def compute_per_point_reproj_errs(pts3d, rvec, tvec, pts2d, K, dist):
     """Compute per-point reprojection error in pixels"""
     proj, _ = cv2.projectPoints(pts3d, rvec, tvec, K, dist)
     return np.linalg.norm(proj.reshape(-1, 2) - pts2d, axis=1)
 
 
-def compute_reproj_error(pts3d, rvec, tvec, pts2d, K, dist):
+def compute_reproj_errs(pts3d, rvec, tvec, pts2d, K, dist):
     """Compute mean reprojection error over all points"""
-    return compute_per_point_reproj_errors(pts3d, rvec, tvec, pts2d, K, dist).mean()
+    return compute_per_point_reproj_errs(pts3d, rvec, tvec, pts2d, K, dist).mean()
 
 from dataclasses import dataclass
 from typing import Optional
 
 @dataclass(slots=True)
-class Pose:
-    rvec: np.ndarray
-    tvec: np.ndarray
-
-@dataclass(slots=True)
-class PnPDiagnostics:
-    inlier_mask: np.ndarray
-    per_point_errors: np.ndarray
-    round1_error: float
-    used_threshold: float
-
-@dataclass(slots=True)
 class PnPResult:
-    valid: bool
+    valid: bool = False
     reason: str = ""
-    pose: Optional[Pose] = None
-    diagnostics: Optional[PnPDiagnostics] = None
+    rvec: np.ndarray = None
+    tvec: np.ndarray = None
+    inlier_mask: np.ndarray = None
+    reproj_errs: np.ndarray = None
+    ave_reproj_err: float = None
+    round1_reproj_errs: np.ndarray = None
+    used_threshold: float = None
     
 # -----------------------------
 # Two-round PnP for initial pose
@@ -115,46 +108,59 @@ def two_round_pnp(
         - rvec (ndarray): Rotation vector (3,)
         - tvec (ndarray): Translation vector (3,)
         - inlier_mask (ndarray): Boolean array indicating inlier points
-        - per_point_errors (ndarray): Reprojection error per point (after round2 if refined)
-        - round1_error (float): Mean reproj error of round1
+        - reproj_errs (ndarray): Reprojection error per point (after round2 if refined)
+        - round1_reproj_errs (ndarray): Reprojection error per point of round1
         - used_threshold (float): Threshold used to classify inliers
     """
     rvec1, tvec1, valid1, reason = solvePnP_IPPE(pts2d, pts3d, K, dist)
     if not valid1:
-        return PnPResult(valid=False, reason=reason, pose=None, diagnostics=None)
+        return PnPResult(
+            valid=False, reason=reason, rvec=rvec1, tvec=tvec1)
 
     # Round 1: compute reprojection errors
-    per_point_errors = compute_per_point_reproj_errors(pts3d, rvec1, tvec1, pts2d, K, dist)
-    round1_error = per_point_errors.mean()
+    reproj_errs_round1 = compute_per_point_reproj_errs(
+        pts3d, rvec1, tvec1, pts2d, K, dist)
+    ave_err_round1 = reproj_errs_round1.mean()
 
     # Compute threshold for inlier selection
     if use_adaptive_threshold:
-        median_error = np.median(per_point_errors)
-        current_threshold = min(median_error * adaptive_multiplier, fixed_threshold)
+        median_error = np.median(reproj_errs_round1)
+        current_threshold = min(
+            median_error * adaptive_multiplier, fixed_threshold)
     else:
         current_threshold = fixed_threshold
-
-    inlier_mask = per_point_errors < current_threshold
+        
+    inlier_mask = reproj_errs_round1 < current_threshold
     n_inliers = inlier_mask.sum()
 
     # Round 2: refine pose if enough inliers
     if n_inliers >= min_inliers:
         pts3d_inlier = pts3d[inlier_mask]
         pts2d_inlier = pts2d[inlier_mask]
-        rvec2, tvec2, valid2, reason2 = solvePnP_IPPE(pts2d_inlier, pts3d_inlier, K, dist)
+        rvec2, tvec2, valid2, reason2 = solvePnP_IPPE(
+            pts2d_inlier, pts3d_inlier, K, dist)
         if valid2:
-            per_point_errors_round2 = compute_per_point_reproj_errors(pts3d, rvec2, tvec2, pts2d, K, dist)
+            reproj_errs_round2 = compute_per_point_reproj_errs(
+                pts3d, rvec2, tvec2, pts2d_inlier, K, dist)
+            ave_err_round2 = reproj_errs_round2.mean()
+
             return PnPResult(
-                valid=True, reason="", pose=Pose(rvec2, tvec2), \
-                diagnostics=PnPDiagnostics(
-                    inlier_mask, per_point_errors_round2, round1_error, current_threshold))
+                valid=True, reason="", rvec=rvec2, tvec=tvec2, \
+                inlier_mask=inlier_mask, reproj_errs=reproj_errs_round2, ave_reproj_err=ave_err_round2, \
+                round1_reproj_errs=reproj_errs_round1, used_threshold=current_threshold)
         else:
-            return PnPResult(valid=False, reason=reason2, pose=None, diagnostics=None)
+            return PnPResult(
+                valid=False, reason=reason2, inlier_mask=None, reproj_errs=None, ave_reproj_err=0.0, \
+                round1_reproj_errs=None, used_threshold=None)
+            # return PnPResult(
+            #     valid=False, reason=reason2, inlier_mask=None, reproj_errs=None, ave_reproj_err=0.0, \
+            #     round1_reproj_errs=None, used_threshold=None)
     # Fallback: return round1 results
     return PnPResult(
-        valid=True, reason="", pose=Pose(rvec1, tvec1), \
+        valid=True, reason="", rvec=rvec1, tvec=tvec1, \
         diagnostics=PnPDiagnostics(
-            inlier_mask, per_point_errors, round1_error, current_threshold))
+            inlier_mask, reproj_errs_round1, ave_err_round1, \
+            reproj_errs_round1, current_threshold))
 
 def rvec_tvec_to_transform(rvec, tvec):
     """Convert rotation vector and translation vector to 4x4 transformation matrix.

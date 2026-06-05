@@ -183,7 +183,11 @@ class StaticPoseOptimizer:
     def get_frame_count(self):
         return len(self._frames)
 
-    def get_frame_error(self, frame_index):
+    def get_frame_avg_reproj_err(self,frame_index):
+        errors = self.get_frame_reproj_errs(frame_index)
+        return float(np.mean(errors))
+
+    def get_frame_reproj_errs(self, frame_index):
         frame = self.get_frame_by_index(frame_index)
         if frame is None:
             raise ValueError(f"Frame with index {frame_index} not found")
@@ -193,12 +197,7 @@ class StaticPoseOptimizer:
         cMo = self.compute_cMo(frame['robot_pose'], frame_index)
         proj = self._project(frame['pts3d'], cMo[:3, :3], cMo[:3, 3])
         errors = np.linalg.norm(proj - frame['pts2d'], axis=1)
-        return float(np.mean(errors)), {
-            'pts3d': frame['pts3d'].copy(),
-            'pts2d': frame['pts2d'].copy(),
-            'proj': proj.copy(),
-            'errors': errors.copy()
-        }
+        return errors
 
     def get_average_error(self):
         if not self._frames or self._pose is None:
@@ -211,7 +210,7 @@ class StaticPoseOptimizer:
             return None
         errors = {}
         for frame in self._frames:
-            err, _ = self.get_frame_error(frame['index'])
+            err = self.get_frame_avg_reproj_err(frame['index'])
             errors[frame['index']] = err
         return errors
 

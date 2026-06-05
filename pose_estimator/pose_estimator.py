@@ -7,6 +7,31 @@ from config.pose_estimator_config import PoseEstimatorConfig
 from utils.pnp_utils import *
 from core.logger import get_logger
 from core.packet import FramePacket
+from dataclasses import dataclass
+
+@dataclass(slots=True)
+class OptimizerResult:
+    bMo: np.ndarray
+    cMo: np.ndarray
+    reproj_errs: np.ndarray
+    avg_reproj_err: float = 0.0
+
+@dataclass(slots=True)
+class PoseEstimatorResult:
+    # Optimized result
+    bMo_opt: np.ndarray
+    cMc_opt: np.ndarray
+    reproj_errs_opt: np.ndarray
+    avg_reproj_err_opt: float = 0.0
+    
+    # PnP result
+    bMo_pnp: np.ndarray
+    cMc_pnp: np.ndarray
+    inlier_mask: np.ndarray
+    reproj_errs_pnp: np.ndarray
+    reproj_errs_round1: np.ndarray
+    avg_reproj_err_pnp: float = 0.0
+
 
 class PoseEstimator:
     def __init__(self, cfg:PoseEstimatorConfig):
@@ -36,21 +61,16 @@ class PoseEstimator:
     # TODO: change track() params from packet to below
     # after move record and visualization to new thread
     
-    # def track(self, frame_id: int, image: np.ndarray, 
-    #           keypoints: np.ndarray, robot_pose: np.adarray):
+    
 
-    def track(self, packet: FramePacket):
+    # def track(self, packet: FramePacket):
+    def track(self, frame_id: int, pts2d: np.ndarray,
+               robot_pose: np.adarray)->PoseEstimatorResult:
 
-        # Temp
-        frame_id = packet.frame_id
-        refined_pts2d = packet.refined_pts2d
-        image = packet.image
-        robot_pose = packet.robot_pose
-        
         # PnP estimate camera pose
         # two round PnP for better initial pose in optimization
         pnp_result = two_round_pnp(
-            refined_pts2d, self.obj_pts, self.K, self.dist,
+            pts2d, self.obj_pts, self.K, self.dist,
             self.cfg.tracker.reproj_error_threshold,
             self.cfg.tracker.use_adaptive_threshold,
             self.cfg.tracker.adaptive_multiplier,
@@ -65,10 +85,10 @@ class PoseEstimator:
         
         # T_co
         cMo_pnp = rvec_tvec_to_transform(
-            pnp_result.pose.rvec, pnp_result.pose.tvec
+            pnp_result.rvec, pnp_result.tvec
         )
-        bMe = robot_pose
-        bMo_pnp = bMe @ self.eMc @ cMo_pnp
+        # robot_pose is bMe
+        bMo_pnp = robot_pose @ self.eMc @ cMo_pnp
 
         # Initialize pose
         if not self.optimizer.is_initialized():
@@ -86,7 +106,7 @@ class PoseEstimator:
 
         # Add frame
         self.optimizer.add_frame(
-            frame_id, robot_pose, refined_pts2d,self.obj_pts)
+            frame_id, robot_pose, pts2d, self.obj_pts)
         
         # Optimize
         self.optimizer.optimize()
@@ -96,11 +116,31 @@ class PoseEstimator:
         cMo_optimized = self.optimizer.compute_cMo(robot_pose, frame_id)
         self.last_bMo = bMo_optimized
 
+        # Get reprojection errors
+        reproj_errs_opt = \
+            self.optimizer.get_frame_reproj_errs(frame_id)
+        avg_reproj_err_opt = float(np.mean(reproj_errs_opt))
+
+        # Generate result
+        result = PoseEstimatorResult(
+            bMo_optimized,
+            cMo_optimized,
+            reproj_errs_opt,
+            avg_reproj_err_opt,
+            bMo_pnp,
+            cMo_pnp,
+            pnp_result.diagnostics.inlier_mask,
+            pnp_result.diagnostics.reproj_errs,
+            pnp_result.diagnostics.round1_reproj_errs,
+            np.mean(pnp_result.diagnostics.reproj_errs),
+        )
+
+
         # Temp: Record data for analysis and diagnostics
 
         # Temp: Visualization
-        roi = packet.roi
-        inlier_mask = pnp_result.diagnostics.inlier_mask
+        # roi = packet.roi
+        # inlier_mask = pnp_result.diagnostics.inlier_mask
 
         # self._render_frame(image,roi,refined_pts2d,self.obj_pts,
         #                    cMo_optimized,inlier_mask,frame_id)
