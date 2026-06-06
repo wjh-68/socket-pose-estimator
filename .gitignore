@@ -11,3 +11,5 @@ result/**
 code/**
 venv310/**
 logs/**
+.venv/**
+.vscode/**
