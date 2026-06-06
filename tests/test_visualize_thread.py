@@ -1,61 +1,102 @@
-import sys
 import os
-import tempfile
-import time
+import threading
 import numpy as np
+from pathlib import Path
 from queue import Queue
-
-# ensure project root is importable for tests
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
 
 from core.packet import FramePacket
 from visualization.visualize_thread import VisualizeThread
-from config.visualization_config import VisualizationThreadConfig
+from config.visualization_config import VisualizationThreadConfig, VizCameraConfig
 from pose_estimator.pose_estimator import PoseEstimatorResult, OptimizerResult
 from utils.pnp_utils import PnPResult
 
 
-def make_dummy_packet(frame_id=1):
+def make_dummy_packet(frame_id=1, robot_pose=None, pnp_rvec=None, pnp_tvec=None):
     img = np.zeros((480, 640, 3), dtype=np.uint8)
     packet = FramePacket(
         frame_id=frame_id,
-        timestamp=0,
+        timestamp=frame_id,
         image=img,
     )
 
-    # fake refined points
-    packet.refined_pts2d = np.array([[100, 100], [200, 100], [150, 200], [120, 220], [180, 220], [90, 300], [210, 300]])
-    # fake robot pose
-    packet.robot_pose = np.eye(4)
+    packet.refined_pts2d = np.array([
+        [100 + frame_id * 2, 100 + frame_id * 3],
+        [200 - frame_id * 2, 100 + frame_id],
+        [150, 200 - frame_id * 5],
+        [120 + frame_id, 220 - frame_id],
+        [180 - frame_id, 220 + frame_id * 2],
+        [90 + frame_id * 4, 300 - frame_id * 2],
+        [210 - frame_id, 300 + frame_id],
+    ], dtype=np.float32)
+    packet.robot_pose = np.eye(4) if robot_pose is None else robot_pose
 
-    pnp = PnPResult(valid=True, rvec=np.zeros(3), tvec=np.array([0,0,500]), inlier_mask=np.ones(7, dtype=bool), reproj_errs=np.zeros(7), avg_reproj_err=0.0, round1_reproj_errs=np.zeros(7), used_threshold=1.0)
+    pnp = PnPResult(
+        valid=True,
+        rvec=np.zeros(3) if pnp_rvec is None else pnp_rvec,
+        tvec=np.array([0, 0, 500]) if pnp_tvec is None else pnp_tvec,
+        inlier_mask=np.ones(7, dtype=bool),
+        reproj_errs=np.zeros(7),
+        avg_reproj_err=0.0,
+        round1_reproj_errs=np.zeros(7),
+        used_threshold=1.0,
+    )
 
-    opt = OptimizerResult(bMo=np.eye(4), cMo=np.eye(4), reproj_errs=np.zeros(7), avg_reproj_err=0.0)
+    opt_rotation = np.eye(4)
+    opt_translation = np.eye(4)
+    opt_translation[0, 3] = frame_id * 5
+    opt_translation[1, 3] = frame_id * -3
+    opt_translation[2, 3] = 500 + frame_id * 10
+    opt = OptimizerResult(
+        bMo=opt_translation,
+        cMo=opt_translation,
+        reproj_errs=np.zeros(7),
+        avg_reproj_err=0.0,
+    )
     pose_res = PoseEstimatorResult(valid=True, reason="", optimized=opt, pnp=pnp)
     packet.pose_est_result = pose_res
     return packet
 
 
-def test_visualize_thread_saves_csv():
+def test_visualize_thread_saves_csv(tmp_path: Path):
     q = Queue()
-    stop_event = type('E', (), {'is_set': lambda self=False: False})()
-    tmpdir = tempfile.mkdtemp()
-    cfg = VisualizationThreadConfig(result_dir=tmpdir)
+    stop_event = threading.Event()
+    result_dir = tmp_path / "visualization"
+    result_dir.mkdir()
+
+    camera_cfg = VizCameraConfig(
+        K=np.eye(3),
+        dist=np.zeros(5),
+        eMc=np.eye(4),
+    )
+    cfg = VisualizationThreadConfig(result_dir=str(result_dir), camera=camera_cfg)
     vt = VisualizeThread(q, stop_event, cfg)
     vt.start()
 
-    pkt = make_dummy_packet(1)
-    q.put(pkt)
-    eof = make_dummy_packet(2)
+    for frame_id in range(1, 5):
+        pose = np.eye(4)
+        pose[0, 3] = frame_id * 10
+        pose[1, 3] = frame_id * -5
+        pose[2, 3] = frame_id * 2
+        pnp_rvec = np.array([0.0, 0.0, 0.01 * frame_id])
+        pnp_tvec = np.array([0.0, 0.0, 500.0 + frame_id * 20])
+        q.put(make_dummy_packet(frame_id, robot_pose=pose, pnp_rvec=pnp_rvec, pnp_tvec=pnp_tvec))
+
+    eof = make_dummy_packet(99)
     eof.eof = True
     q.put(eof)
 
-    # wait for thread to process
     vt.join(timeout=5)
 
-    pnp_csv = os.path.join(tmpdir, 'pnp_results.csv')
-    opt_csv = os.path.join(tmpdir, 'optimize_results.csv')
-    assert os.path.exists(pnp_csv)
-    assert os.path.exists(opt_csv)
+    expected_files = [
+        result_dir / 'pnp_results.csv',
+        result_dir / 'optimize_results.csv',
+        result_dir / 'robot_pose_translation_vs_frame.png',
+        result_dir / 'robot_pose_euler_vs_frame.png',
+        result_dir / 'cMo_comparison_tvec_vs_frame.png',
+        result_dir / 'cMo_comparison_euler_vs_frame.png',
+        result_dir / 'bMo_comparison_tvec_vs_frame.png',
+        result_dir / 'bMo_comparison_euler_vs_frame.png',
+    ]
+
+    for path in expected_files:
+        assert path.exists(), f"Missing expected output: {path}"

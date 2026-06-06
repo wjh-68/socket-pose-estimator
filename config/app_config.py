@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields, is_dataclass
-from typing import get_args, get_origin
+from typing import Optional, get_args, get_origin
 
 import numpy as np
 import yaml
@@ -18,7 +18,7 @@ class AppConfig:
     infer: InferThreadConfig
     refine: RefineThreadConfig
     pose_estimator: PoseEstimatorThreadConfig
-    visualization: VisualizationThreadConfig
+    visualization: Optional[VisualizationThreadConfig] = None
 
     @classmethod
     def from_yaml(cls, config_path: str):
