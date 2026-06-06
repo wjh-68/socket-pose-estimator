@@ -6,7 +6,7 @@ from queue import Queue
 
 from core.packet import FramePacket
 from visualization.visualize_thread import VisualizeThread
-from config.visualization_config import VisualizationThreadConfig, VizCameraConfig
+from config.visualization_config import VisualizationThreadConfig, VizCameraConfig, VizObjectModelConfig
 from pose_estimator.pose_estimator import PoseEstimatorResult, OptimizerResult
 from utils.pnp_utils import PnPResult
 
@@ -68,7 +68,18 @@ def test_visualize_thread_saves_csv(tmp_path: Path):
         dist=np.zeros(5),
         eMc=np.eye(4),
     )
-    cfg = VisualizationThreadConfig(result_dir=str(result_dir), camera=camera_cfg)
+    object_model_cfg = VizObjectModelConfig(
+        obj_pts=np.array([
+            [-8.0, 11.2, 0.0],
+            [8.0, 11.2, 0.0],
+            [-16.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [16.0, 0.0, 0.0],
+            [-8.0, -13.9, 0.0],
+            [8.0, -13.9, 0.0],
+        ], dtype=float),
+    )
+    cfg = VisualizationThreadConfig(result_dir=str(result_dir), camera=camera_cfg, object_model=object_model_cfg)
     vt = VisualizeThread(q, stop_event, cfg)
     vt.start()
 

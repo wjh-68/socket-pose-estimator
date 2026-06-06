@@ -26,6 +26,10 @@ class VisualizeThread(threading.Thread):
         self.cfg = cfg
         self.queue_cfg = cfg.queue_config
         self.result_dir = cfg.result_dir
+        self.save_images = cfg.save_images
+        self.save_csv = cfg.save_csv
+        self.save_plots = cfg.save_plots
+        self.image_format = cfg.image_format
         os.makedirs(self.result_dir, exist_ok=True)
         self.logger = get_logger("visualize_thread")
 
@@ -87,6 +91,7 @@ class VisualizeThread(threading.Thread):
         pnp = res.pnp
         rec['cMo_pnp'] = None
         rec['bMo_pnp'] = None
+        rec['projection_error'] = None
         if pnp is not None and getattr(pnp, 'rvec', None) is not None and getattr(pnp, 'tvec', None) is not None:
             try:
                 cMo_pnp = rvec_tvec_to_transform(pnp.rvec, pnp.tvec)
@@ -98,6 +103,18 @@ class VisualizeThread(threading.Thread):
             except Exception:
                 rec['cMo_pnp'] = None
                 rec['bMo_pnp'] = None
+
+        if rec['cMo_optimized'] is not None and getattr(self.cfg, 'camera', None) is not None and getattr(self.cfg, 'object_model', None) is not None and getattr(packet, 'refined_pts2d', None) is not None:
+            try:
+                obj_pts = np.asarray(self.cfg.object_model.obj_pts, dtype=float)
+                if obj_pts.shape[0] == packet.refined_pts2d.shape[0]:
+                    cMo_opt = np.asarray(rec['cMo_optimized'], dtype=float)
+                    rvec_opt, tvec_opt = transform_to_rvec_tvec(cMo_opt)
+                    proj_pts, _ = cv2.projectPoints(obj_pts, rvec_opt, tvec_opt, self.cfg.camera.K, self.cfg.camera.dist)
+                    proj_pts = proj_pts.reshape(-1, 2)
+                    rec['projection_error'] = float(np.mean(np.linalg.norm(proj_pts - packet.refined_pts2d, axis=1)))
+            except Exception:
+                rec['projection_error'] = None
 
         return rec
 
@@ -135,12 +152,17 @@ class VisualizeThread(threading.Thread):
         return frame_rec
 
     def _render_and_save_image(self, packet: FramePacket, opt_rec: dict):
+        if not self.save_images:
+            return
+
         vis_img = packet.image.copy()
         # draw refined points
         pts = getattr(packet, 'refined_pts2d', None)
         if pts is not None:
             for p in pts:
                 cv2.circle(vis_img, (int(p[0]), int(p[1])), 3, (0, 255, 0), -1)
+
+        self._draw_projection_overlay(vis_img, packet, opt_rec)
 
         # draw axes if camera and cMo available
         try:
@@ -153,8 +175,33 @@ class VisualizeThread(threading.Thread):
         except Exception:
             self.logger.debug('skip drawing axes')
 
-        vis_path = os.path.join(self.result_dir, f"frame_{int(packet.frame_id):06d}_vis.png")
+        vis_path = os.path.join(self.result_dir, f"frame_{int(packet.frame_id):06d}_vis.{self.image_format}")
         cv2.imwrite(vis_path, vis_img)
+
+    def _draw_projection_overlay(self, vis_img, packet: FramePacket, opt_rec: dict):
+        if getattr(self.cfg, 'camera', None) is None or getattr(self.cfg, 'object_model', None) is None:
+            return
+        if opt_rec.get('cMo_optimized') is None or getattr(packet, 'refined_pts2d', None) is None:
+            return
+
+        try:
+            obj_pts = np.asarray(self.cfg.object_model.obj_pts, dtype=float)
+            if obj_pts.ndim != 2 or obj_pts.shape[1] != 3:
+                return
+
+            cMo_opt = np.asarray(opt_rec['cMo_optimized'], dtype=float)
+            rvec_opt, tvec_opt = transform_to_rvec_tvec(cMo_opt)
+            projected_pts, _ = cv2.projectPoints(obj_pts, rvec_opt, tvec_opt, self.cfg.camera.K, self.cfg.camera.dist)
+            projected_pts = projected_pts.reshape(-1, 2)
+
+            refined_pts = np.asarray(packet.refined_pts2d, dtype=float)
+            for p in projected_pts:
+                cv2.circle(vis_img, (int(p[0]), int(p[1])), 3, (255, 0, 0), 1)
+            if refined_pts.shape[0] == projected_pts.shape[0]:
+                for src, dst in zip(refined_pts, projected_pts):
+                    cv2.line(vis_img, (int(src[0]), int(src[1])), (int(dst[0]), int(dst[1])), (255, 255, 0), 1)
+        except Exception:
+            self.logger.debug('skip projection overlay')
 
     def _process_packet(self, packet: FramePacket):
         self._validate_packet(packet)
@@ -175,6 +222,9 @@ class VisualizeThread(threading.Thread):
 
     def _save_csv_records(self):
         # Save pnp
+        if not self.save_csv:
+            return
+
         if self.pnp_records:
             pnp_df = pd.DataFrame(self.pnp_records)
             pnp_csv_path = os.path.join(self.result_dir, "pnp_results.csv")
@@ -188,7 +238,7 @@ class VisualizeThread(threading.Thread):
             self.logger.info(f"Saved optimize CSV to {opt_csv_path}")
 
     def _save_plots(self):
-        if not self.frame_records:
+        if not self.save_plots or not self.frame_records:
             return
 
         try:
