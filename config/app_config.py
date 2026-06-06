@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Optional, get_args, get_origin
+from typing import Optional, Union, get_args, get_origin
 
 import numpy as np
 import yaml
@@ -59,6 +59,11 @@ class AppConfig:
             if origin is tuple:
                 element_type = args[0] if args else None
                 return tuple(cls._convert_value(element_type, item) for item in value)
+            if origin is Union:
+                if type(None) in args:
+                    non_none_args = [arg for arg in args if arg is not type(None)]
+                    if len(non_none_args) == 1:
+                        return None if value is None else cls._convert_value(non_none_args[0], value)
 
         if type_hint is np.ndarray:
             return np.array(value)

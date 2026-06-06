@@ -36,8 +36,6 @@ class PoseEstimatorConfig:
     tracker: TrackerConfig
     optimizer: OptimizerConfig
     window_size: int = 5
-    # temp
-    result_dir: str = ""
 
 @dataclass
 class PoseEstimatorThreadConfig:

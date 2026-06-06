@@ -12,6 +12,7 @@ from detector.refine_thread \
     import RefineThread, RefineThreadConfig
 from pose_estimator.pose_estimator_thread \
     import PoseEstimatorThread, PoseEstimatorThreadConfig
+from config.visualization_config import VizCameraConfig, VizObjectModelConfig
 # from core.queues import create_queues
 from config.app_config import AppConfig
 from config.data_source_config import DataSourceConfig
@@ -74,8 +75,20 @@ def main():
     vis_thread = None
     try:
         if hasattr(app_cfg, "visualization") and app_cfg.visualization is not None:
+            viz_cfg = app_cfg.visualization
+            pose_cfg = app_cfg.pose_estimator.pose_estimator_cfg
+            if getattr(viz_cfg, 'camera', None) is None:
+                viz_cfg.camera = VizCameraConfig(
+                    K=pose_cfg.camera.K,
+                    dist=pose_cfg.camera.dist,
+                    eMc=pose_cfg.camera.eMc,
+                )
+            if getattr(viz_cfg, 'object_model', None) is None:
+                viz_cfg.object_model = VizObjectModelConfig(
+                    obj_pts=pose_cfg.object_model.obj_pts,
+                )
             from visualization.visualize_thread import VisualizeThread
-            vis_thread = VisualizeThread(queues["result_queue"], stop_event, app_cfg.visualization)
+            vis_thread = VisualizeThread(queues["result_queue"], stop_event, viz_cfg)
             vis_thread.start()
         else:
             logger.info("No visualization config; visualization not started")

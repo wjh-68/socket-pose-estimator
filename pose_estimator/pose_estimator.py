@@ -42,8 +42,6 @@ class PoseEstimator:
         self.optimizer.set_object_pts(self.obj_pts)
         self.logger = get_logger("pose_estimator")
         self._reset_statistics()
-        # Temp
-        self.result_dir = self.cfg.result_dir
 
     def _reset_statistics(self):
         self.cnt_rejected_frames = 0
@@ -126,65 +124,7 @@ class PoseEstimator:
             optimized = optimizer_result,
             pnp = pnp_result)
 
-
-        # Temp: Record data for analysis and diagnostics
-
-        # Temp: Visualization
-        # roi = packet.roi
-        # inlier_mask = pnp_result.diagnostics.inlier_mask
-
-        # self._render_frame(image,roi,refined_pts2d,self.obj_pts,
-        #                    cMo_optimized,inlier_mask,frame_id)
-        # TODO: Move visualization and data record to new threads
-
         return result
-
-
-    def _render_frame(
-        self,
-        img,
-        roi_bounds,
-        centers,
-        pts3d,
-        cMo_optimized,
-        inlier_mask,
-        frame_id,
-    ):
-        vis_img = img.copy()
-        roi_x_min, roi_y_min, roi_x_max, roi_y_max = roi_bounds
-        cMo_rvec, cMo_tvec = transform_to_rvec_tvec(cMo_optimized)
-        cv2.drawFrameAxes(vis_img, self.K, self.dist, 
-                          cMo_optimized[:3, :3], 
-                          cMo_optimized[:3, 3:], 10, 3)
-        proj, _ = cv2.projectPoints(
-            pts3d, cMo_rvec, cMo_tvec, self.K, self.dist)
-
-        for i, (x, y) in enumerate(centers):
-            if inlier_mask is not None and i < len(inlier_mask):
-                color = (0, 255, 0) if inlier_mask[i] else (0, 0, 255)
-            else:
-                color = (255, 255, 0)
-            cv2.circle(vis_img, (int(x), int(y)), 3, color, 1)
-            x_proj, y_proj = proj[i][0]
-            cv2.drawMarker(vis_img, (int(x_proj), int(y_proj)), 
-                           (255, 0, 0), cv2.MARKER_CROSS, 5, 1)
-            cv2.line(vis_img, (int(x), int(y)), 
-                     (int(x_proj), int(y_proj)), (0, 255, 0), 1)
-            cv2.putText(vis_img, str(i), (int(x)-8, int(y)-8), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-
-        pad = 50
-        roi_y_min_clamped = max(0, roi_y_min - pad)
-        roi_y_max_clamped = min(vis_img.shape[0], roi_y_max + pad)
-        roi_x_min_clamped = max(0, roi_x_min - pad)
-        roi_x_max_clamped = min(vis_img.shape[1], roi_x_max + pad)
-        vis_result = vis_img[roi_y_min_clamped:roi_y_max_clamped,
-                              roi_x_min_clamped:roi_x_max_clamped]
-        vis_result = cv2.resize(vis_result, None, fx=2, fy=2,
-                                 interpolation=cv2.INTER_NEAREST)
-        vis_result_path = os.path.join(
-            self.result_dir, f"frame_{frame_id:06d}_vis_result.png")
-        cv2.imwrite(vis_result_path, vis_result)
 
     def _shold_reject_pose_diff(self, bMo_pnp):
         if self.last_bMo is None:
