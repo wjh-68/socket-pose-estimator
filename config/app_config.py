@@ -9,6 +9,7 @@ from config.data_reader_config import DataReaderThreadConfig
 from config.infer_config import InferThreadConfig
 from config.refine_config import RefineThreadConfig
 from config.pose_estimator_config import PoseEstimatorThreadConfig
+from config.visualization_config import VisualizationThreadConfig
 
 @dataclass(slots=True)
 class AppConfig:
@@ -17,6 +18,7 @@ class AppConfig:
     infer: InferThreadConfig
     refine: RefineThreadConfig
     pose_estimator: PoseEstimatorThreadConfig
+    visualization: VisualizationThreadConfig
 
     @classmethod
     def from_yaml(cls, config_path: str):

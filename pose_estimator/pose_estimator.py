@@ -6,7 +6,6 @@ from static_pose_optimizer_ba import StaticPoseOptimizer
 from config.pose_estimator_config import PoseEstimatorConfig
 from utils.pnp_utils import *
 from core.logger import get_logger
-from core.packet import FramePacket
 from dataclasses import dataclass
 
 @dataclass(slots=True)
@@ -56,9 +55,8 @@ class PoseEstimator:
     
     
 
-    # def track(self, packet: FramePacket):
     def track(self, frame_id: int, pts2d: np.ndarray,
-               robot_pose: np.adarray)->PoseEstimatorResult:
+               robot_pose: np.ndarray) -> PoseEstimatorResult:
 
         # PnP estimate camera pose
         # two round PnP for better initial pose in optimization

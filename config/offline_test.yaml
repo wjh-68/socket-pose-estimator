@@ -95,6 +95,13 @@ pose_estimator:
     drop_oldest: true
     put_timeout: 0.2
 
+visualization:
+  result_dir: "result/mt_offline/20260529_113904"
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.2
+
 queues:
   raw_queue: 10
   infered_queue: 10

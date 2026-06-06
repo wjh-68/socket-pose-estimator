@@ -70,6 +70,18 @@ def main():
     refine_thread.start()
     pose_estimator_thread.start()
 
+    # visualization thread (optional)
+    vis_thread = None
+    try:
+        if hasattr(app_cfg, "visualization") and app_cfg.visualization is not None:
+            from visualization.visualize_thread import VisualizeThread
+            vis_thread = VisualizeThread(queues["result_queue"], stop_event, app_cfg.visualization)
+            vis_thread.start()
+        else:
+            logger.info("No visualization config; visualization not started")
+    except Exception:
+        logger.exception("Visualization thread failed to start")
+
 
     # Wait for user to interrupt
     try:
@@ -83,6 +95,8 @@ def main():
     infer_thread.join()
     refine_thread.join()
     pose_estimator_thread.join()
+    if vis_thread is not None:
+        vis_thread.join()
     
 
     logger.info("Shutdown complete")
