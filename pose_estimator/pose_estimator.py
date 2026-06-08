@@ -120,28 +120,24 @@ class PoseEstimator:
             bMo_optimized, cMo_optimized, reproj_errs_opt,avg_reproj_err_opt
         )
         result = PoseEstimatorResult(
-            valid = True, str = "", 
+            valid = True, reason = "", 
             optimized = optimizer_result,
             pnp = pnp_result)
 
         return result
 
-    def _shold_reject_pose_diff(self, bMo_pnp):
+    def _should_reject_pose_diff(self, bMo_pnp):
         if self.last_bMo is None:
             return False
-        oMb_pnp = np.linalg.inv(bMo_pnp)
-        last_oMb = np.linalg.inv(self.last_bMo)
-        tvec_diff = oMb_pnp[:3,3]-last_oMb[:3,3]
-        pos_diff = float(np.linalg.norm(tvec_diff))
-
-        rot_mat_diff = self.last_bMo @ last_oMb
-        rot_vec_diff = Rotation.from_matrix(rot_mat_diff).as_rotvec()
-        rot_diff = float(np.degrees(np.linalg.norm(rot_vec_diff)))
+        pose_diff = self.last_bMo @ np.linalg.inv(bMo_pnp)
+        rot_vec_diff = Rotation.from_matrix(pose_diff[:3,:3]).as_rotvec()
+        rot_euler_diff = float(np.degrees(np.linalg.norm(rot_vec_diff)))
+        pos_diff = float(np.linalg.norm(pose_diff[:3,3]))
 
         if pos_diff > self.cfg.tracker.max_translation or\
-            rot_diff > self.cfg.tracker.max_rotation_deg:
+            rot_euler_diff > self.cfg.tracker.max_rotation_deg:
             self.logger.warning(f"Rejected large pose diff: \
-                pos_diff={pos_diff:.1f}mm, rot_diff={rot_diff:.1f}deg"
+                pos_diff={pos_diff:.1f}mm, rot_diff={rot_euler_diff:.1f}deg"
             )
             return True
         return False

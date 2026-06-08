@@ -140,7 +140,7 @@ def two_round_pnp(
             pts2d_inlier, pts3d_inlier, K, dist)
         if valid2:
             reproj_errs_round2 = compute_per_point_reproj_errs(
-                pts3d, rvec2, tvec2, pts2d_inlier, K, dist)
+                pts3d, rvec2, tvec2, pts2d, K, dist)
             avg_err_round2 = reproj_errs_round2.mean()
 
             return PnPResult(
