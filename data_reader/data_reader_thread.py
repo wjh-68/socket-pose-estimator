@@ -34,7 +34,6 @@ class DataReaderThread(threading.Thread):
                 read_cost_ms = (time.perf_counter_ns() - t0) / 1e6
                 self.logger.debug(
                     f"Read data cost: {read_cost_ms:.4f} ms")
-                packet.timing['read_data'] = read_cost_ms
 
                 # Online Mode: wait when no data is available
                 if packet is None:
@@ -42,6 +41,8 @@ class DataReaderThread(threading.Thread):
                         "Data source returned None, waiting")
                     time.sleep(0.005)  # Wait before retrying
                     continue
+                
+                packet.timing['read_data'] = read_cost_ms
 
                  # Offline Mode: handle EOF packet from upstream
                 if getattr(packet, "eof", False):

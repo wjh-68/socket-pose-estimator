@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
 from config.data_source_config import OnlineDataSourceConfig
+from .aubo_sdk_wrapper import AuboArm
 
 class DataSourceState(Enum):
 
@@ -51,10 +52,10 @@ class OnlineDataSource(BaseDataSource):
         if self.stop_event.is_set():
             return False
         
-        try:
-            import pyaubo_sdk
-        except ImportError:
-            raise ImportError("Failed to import pyaubo_sdk")
+        # try:
+        #     import pyaubo_sdk
+        # except ImportError:
+        #     raise ImportError("Failed to import pyaubo_sdk")
         
         # Initialize camera
         self.cap = cv2.VideoCapture(self.cfg.camera_id)
@@ -68,18 +69,20 @@ class OnlineDataSource(BaseDataSource):
             raise RuntimeError("Failed to open camera")
         
         # Initialize robot connection
-        self.robot_rpc_client = pyaubo_sdk.RpcClient()
-        self.robot_rpc_client.connect(self.cfg.robot_ip,
-                                      self.cfg.robot_port)
-        self.robot_name = self.robot_rpc_client.getRobotName()[0]
-        if not self.robot_rpc_client.hasConnected():
-            raise RuntimeError("Failed to connect to robot")
-        self.robot_rpc_client.login(self.cfg.robot_login_name,
-                                    self.cfg.robot_password)            
-        if not self.robot_rpc_client.hasConnected():
-            raise RuntimeError("Failed to login to robot")
-        if not self.robot_name:
-            raise RuntimeError("Failed to get robot name")
+        self.robot = AuboArm(self.cfg.robot_ip,self.cfg.robot_port)
+
+        # self.robot_rpc_client = pyaubo_sdk.RpcClient()
+        # self.robot_rpc_client.connect(self.cfg.robot_ip,
+        #                               self.cfg.robot_port)
+        # self.robot_name = self.robot_rpc_client.getRobotNames()[0]
+        # if not self.robot_rpc_client.hasConnected():
+        #     raise RuntimeError("Failed to connect to robot")
+        # self.robot_rpc_client.login(self.cfg.robot_login_name,
+        #                             self.cfg.robot_password)            
+        # if not self.robot_rpc_client.hasConnected():
+        #     raise RuntimeError("Failed to login to robot")
+        # if not self.robot_name:
+        #     raise RuntimeError("Failed to get robot name")
         self.frame_id = 0
         self.state = DataSourceState.INITIALIZED
         if self.stop_event.is_set():
@@ -181,8 +184,8 @@ class OnlineDataSource(BaseDataSource):
         self.logger.info("Robot thread started")
         while not self.stop_event.is_set():
             try:
-                robot_pose, _ = get_robot_pose_from_rpc(
-                    self.robot_rpc_client, self.robot_name)
+                # robot_pose = self.robot.get_tcp_pose()
+                robot_pose, _ = get_robot_pose_from_rpc(self.robot)
                 ts = time.perf_counter_ns()
                 with self.robot_lock:
                     self.robot_buffer.append(
@@ -215,12 +218,21 @@ class OnlineDataSource(BaseDataSource):
                 closest_robot_data.timestamp_ns - camera_ts_ns)
             return closest_robot_data, time_diff_ns
 
-def get_robot_pose_from_rpc(robot_rpc_client, robot_name):
+def get_robot_pose_from_rpc(robot):
     """Get robot TCP pose from rpc client, convert to 4x4 matrix."""
-    tcp_pose = robot_rpc_client.getRobotInterface(robot_name).getRobotState().getTcpPose()
+    tcp_pose = robot.get_tcp_pose()
     r = Rotation.from_euler('xyz', tcp_pose[3:])
     t = np.array(tcp_pose[:3]).reshape((3, 1))
     robot_pose = np.eye(4)
     robot_pose[:3, :3] = r.as_matrix()
     robot_pose[:3, 3] = t.flatten() * 1000  # m -> mm
     return robot_pose, tcp_pose
+# def get_robot_pose_from_rpc(robot_rpc_client, robot_name):
+#     """Get robot TCP pose from rpc client, convert to 4x4 matrix."""
+#     tcp_pose = robot_rpc_client.getRobotInterface(robot_name).getRobotState().getTcpPose()
+#     r = Rotation.from_euler('xyz', tcp_pose[3:])
+#     t = np.array(tcp_pose[:3]).reshape((3, 1))
+#     robot_pose = np.eye(4)
+#     robot_pose[:3, :3] = r.as_matrix()
+#     robot_pose[:3, 3] = t.flatten() * 1000  # m -> mm
+#     return robot_pose, tcp_pose

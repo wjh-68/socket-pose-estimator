@@ -1,0 +1,135 @@
+data_source:
+  mode: online
+  offline:
+    dataset_path: dataset/mt_offline/20260529_113904/data
+    read_image_nums: 800
+    parse_timestamp: false
+  online:
+    camera_id: 0
+    camera_width: 1920
+    camera_height: 1080
+    camera_brightness: 100
+    robot_ip: "192.168.217.124"
+    robot_port: 30004
+    robot_login_name: "aubo"
+    robot_password: "123456"
+    sync_tolerance_ms: 50.0
+
+data_reader:
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.2
+
+infer:
+  engine_path: checkpoint/best.engine
+  class_names:
+    - object
+  num_keypoints: 7
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.2
+
+refine:
+  max_workers: 4
+  num_keypoints: 7
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.2
+
+pose_estimator:
+  pose_estimator_cfg:
+    window_size: 5
+    camera:
+      K:
+        - [2019.9333903290546, 0., 1050.6000842517674]
+        - [0., 2019.4388319188442, 506.64424837077445]
+        - [0., 0., 1. ]
+      dist: 
+        - [-0.1150545368619907,  0.2723050962669125, 0.0003886106205192, 0.0001112314765922, -0.0671252948936898]
+      eMc:
+        - [ -0.9998322740364398, 0.0183133162551063, 0.0002150415351891, 2.052722934747628 ]
+        - [ -0.0183142173316117, -0.9998173864903543, -0.005457390871824, 82.62492108085526 ]
+        - [  0.0001150593407362, -0.0054604138430923, 0.9999850852097794, 214.0454372512552]
+        - [  0., 0., 0., 1. ]
+
+    object_model:
+      obj_pts:
+        - [-8.0, 11.2, 0.0]
+        - [8.0, 11.2, 0.0]
+        - [-16.0, 0.0, 0.0]
+        - [0.0, 0.0, 0.0]
+        - [16.0, 0.0, 0.0]
+        - [-8.0, -13.9, 0.0]
+        - [8.0, -13.9, 0.0]
+    tracker:
+      use_adaptive_threshold: true
+      reproj_error_threshold: 1.0
+      adaptive_multiplier: 2.0
+      min_inliers: 4
+      max_translation: 10.0
+      max_rotation_deg: 10.0
+    optimizer:
+      prior_sigmas: 
+        - 0.08726646259971647
+        - 0.08726646259971647
+        - 0.017453292519943295
+        - 0.5
+        - 0.5
+        - 10.0
+      point_sigmas: 
+        - 1.5
+        - 1.5
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+  queue_cfg:
+    maxsize: 10
+    drop_oldest: true
+    put_timeout: 0.2
+
+visualization:
+  result_dir: "result/mt_online/20260609"
+  save_images: true
+  save_csv: true
+  save_plots: true
+  image_format: "png"
+  # Optional camera info for axis drawing and PnP pose reconstruction.
+  # If omitted, image rendering still works but no pose axes are drawn.
+  camera:
+    K:
+      - [2019.9333903290546, 0., 1050.6000842517674]
+      - [0., 2019.4388319188442, 506.64424837077445]
+      - [0., 0., 1. ]
+    dist: 
+      - [-0.1150545368619907,  0.2723050962669125, 0.0003886106205192, 0.0001112314765922, -0.0671252948936898]
+    eMc:
+      - [ -0.9998322740364398, 0.0183133162551063, 0.0002150415351891, 2.052722934747628 ]
+      - [ -0.0183142173316117, -0.9998173864903543, -0.005457390871824, 82.62492108085526 ]
+      - [  0.0001150593407362, -0.0054604138430923, 0.9999850852097794, 214.0454372512552]
+      - [  0., 0., 0., 1. ]
+  object_model:
+    obj_pts:
+      - [-8.0, 11.2, 0.0]
+      - [8.0, 11.2, 0.0]
+      - [-16.0, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+      - [16.0, 0.0, 0.0]
+      - [-8.0, -13.9, 0.0]
+      - [8.0, -13.9, 0.0]
+  queue_config:
+    maxsize: 10
+    drop_oldest: false
+    put_timeout: 0.2
+
+queues:
+  raw_queue: 10
+  infered_queue: 10
+  refined_queue: 10
+  result_queue: 10

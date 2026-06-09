@@ -9,7 +9,7 @@ class OfflineDataSourceConfig:
 
 @dataclass(slots=True)
 class OnlineDataSourceConfig:
-    camera_id: str
+    camera_id: int
     camera_width: int
     camera_height: int
     camera_brightness: int
