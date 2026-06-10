@@ -29,7 +29,7 @@ def put_latest(
         try:
             dropped = q.get_nowait()
             q.task_done()
-            logger.warning(
+            logger.debug(
                 "Output queue full, dropping olddest packet")
         except queue.Empty:
             pass
