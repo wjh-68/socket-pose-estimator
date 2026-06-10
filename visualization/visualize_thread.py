@@ -159,8 +159,9 @@ class VisualizeThread(threading.Thread):
         # draw refined points
         pts = getattr(packet, 'refined_pts2d', None)
         if pts is not None:
-            for p in pts:
-                cv2.circle(vis_img, (int(p[0]), int(p[1])), 3, (0, 255, 0), -1)
+            for i, (x,y) in enumerate(pts):
+                cv2.circle(vis_img, (int(x), int(y)), 3, (0, 255, 0), -1)
+                cv2.putText(vis_img, str(i), (int(x)-8, int(y)-8), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0), 1)
 
         self._draw_projection_overlay(vis_img, packet, opt_rec)
 
@@ -175,16 +176,17 @@ class VisualizeThread(threading.Thread):
         except Exception:
             self.logger.debug('skip drawing axes')
 
-        pad = 80
-        roi_x_min, roi_y_min, roi_x_max, roi_y_max = packet.roi
-        roi_y_min_clamped = max(0, roi_y_min - pad)
-        roi_y_max_clamped = min(vis_img.shape[0], roi_y_max + pad)
-        roi_x_min_clamped = max(0, roi_x_min - pad)
-        roi_x_max_clamped = min(vis_img.shape[1], roi_x_max + pad)
-        vis_result = vis_img[roi_y_min_clamped:roi_y_max_clamped, roi_x_min_clamped:roi_x_max_clamped]
-        vis_result = cv2.resize(vis_result, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+        # pad = 80
+        # roi_x_min, roi_y_min, roi_x_max, roi_y_max = packet.roi
+        # roi_y_min_clamped = max(0, roi_y_min - pad)
+        # roi_y_max_clamped = min(vis_img.shape[0], roi_y_max + pad)
+        # roi_x_min_clamped = max(0, roi_x_min - pad)
+        # roi_x_max_clamped = min(vis_img.shape[1], roi_x_max + pad)
+        # vis_result = vis_img[roi_y_min_clamped:roi_y_max_clamped, roi_x_min_clamped:roi_x_max_clamped]
+        # vis_result = cv2.resize(vis_result, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
         vis_path = os.path.join(self.result_dir, f"frame_{int(packet.frame_id):06d}_vis.{self.image_format}")
-        cv2.imwrite(vis_path, vis_result)
+        cv2.imwrite(vis_path, vis_img)
+        # cv2.imwrite(vis_path, vis_result)
 
     def _draw_projection_overlay(self, vis_img, packet: FramePacket, opt_rec: dict):
         if getattr(self.cfg, 'camera', None) is None or getattr(self.cfg, 'object_model', None) is None:
