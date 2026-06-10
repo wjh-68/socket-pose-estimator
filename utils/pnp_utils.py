@@ -181,3 +181,18 @@ def transform_to_rvec_tvec(transform):
     rvec = Rotation.from_matrix(transform[:3, :3]).as_rotvec()
     tvec = transform[:3, 3]
     return rvec, tvec
+
+def pose_to_euler_tvec(pose, unit='deg'):
+    if pose is None:
+        return None
+    if not isinstance(pose, np.ndarray) or pose.shape != (4, 4):
+        raise ValueError("Pose must be a 4x4 numpy array")
+    if not np.allclose(pose[3, :], [0, 0, 0, 1]):
+        raise ValueError("Invalid pose: last row must be [0, 0, 0, 1]")
+    if not np.allclose(pose[:3, :3] @ pose[:3, :3].T, np.eye(3), atol=1e-6):
+        raise ValueError("Invalid pose: rotation part must be orthogonal")
+    euler = Rotation.from_matrix(pose[:3, :3]).as_euler('xyz')
+    tvec = pose[:3, 3]
+    if unit == 'deg':
+        euler = np.degrees(euler)
+    return euler, tvec

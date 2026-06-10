@@ -54,7 +54,7 @@ class PoseEstimatorThread(threading.Thread):
         self._validate_packet(packet)
 
         t0 = time.perf_counter_ns()
-        self.logger.debug(f"refined_pts2d.shape: {packet.refined_pts2d.shape}")
+        # self.logger.debug(f"refined_pts2d.shape: {packet.refined_pts2d.shape}")
         pose_estimator_result = \
             self.pose_estimator.track(
                 packet.frame_id, 

@@ -81,7 +81,11 @@ class PoseEstimator:
         )
         # robot_pose is bMe
         bMo_pnp = robot_pose @ self.eMc @ cMo_pnp
-
+        bMo_euler_pnp, bMo_tvec_pnp = pose_to_euler_tvec(bMo_pnp)
+        self.logger.debug(
+            f"bMo_pnp(euler, tvec):\n{bMo_euler_pnp, bMo_tvec_pnp}"
+        )
+        
         # Initialize pose
         if not self.optimizer.is_initialized():
             self.optimizer.set_initial_pose(bMo_pnp)
@@ -110,6 +114,11 @@ class PoseEstimator:
         cMo_optimized = self.optimizer.compute_cMo(robot_pose, frame_id)
         self.last_bMo = bMo_optimized
 
+        bMo_euler_opt, bMo_tvec_opt = pose_to_euler_tvec(bMo_optimized)
+        self.logger.debug(
+            f"bMo_opt(euler, tvec):\n{bMo_euler_opt, bMo_tvec_opt}"
+        )
+
         # Get reprojection errors
         reproj_errs_opt = \
             self.optimizer.get_frame_reproj_errs(frame_id)
@@ -129,7 +138,8 @@ class PoseEstimator:
     def _should_reject_pose_diff(self, bMo_pnp):
         if self.last_bMo is None:
             return False
-        pose_diff = self.last_bMo @ np.linalg.inv(bMo_pnp)
+        pose_diff = np.linalg.inv(self.last_bMo) @ bMo_pnp
+
         rot_vec_diff = Rotation.from_matrix(pose_diff[:3,:3]).as_rotvec()
         rot_euler_diff = float(np.degrees(np.linalg.norm(rot_vec_diff)))
         pos_diff = float(np.linalg.norm(pose_diff[:3,3]))
