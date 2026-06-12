@@ -75,4 +75,5 @@ def main(config_path="config/online_test_virtual.yaml", run_time=8):
 
 
 if __name__ == "__main__":
-    main()
+    rt = int(os.environ.get("PIPELINE_RUN_TIME", "8"))
+    main(run_time=rt)
