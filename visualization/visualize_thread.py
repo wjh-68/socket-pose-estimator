@@ -13,6 +13,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import cv2
+from concurrent.futures import ThreadPoolExecutor
 
 from utils.pnp_utils import rvec_tvec_to_transform, transform_to_rvec_tvec
 from static_pose_optimizer_ba import pose_to_euler_tvec
@@ -37,6 +38,10 @@ class VisualizeThread(threading.Thread):
         self.pnp_records = []
         self.optimize_records = []
         self.frame_records = []
+        # executor for non-blocking IO (image writes, plot saves)
+        self._io_executor = ThreadPoolExecutor(max_workers=2)
+        # lock for matplotlib operations (not thread-safe)
+        self._plot_lock = threading.Lock()
 
     def _put_packet(self, packet: FramePacket):
         if self.queue_cfg.drop_oldest:
@@ -185,7 +190,24 @@ class VisualizeThread(threading.Thread):
         # vis_result = vis_img[roi_y_min_clamped:roi_y_max_clamped, roi_x_min_clamped:roi_x_max_clamped]
         # vis_result = cv2.resize(vis_result, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
         vis_path = os.path.join(self.result_dir, f"frame_{int(packet.frame_id):06d}_vis.{self.image_format}")
-        cv2.imwrite(vis_path, vis_img)
+        # write image asynchronously to avoid blocking visualize thread
+        try:
+            ext = '.' + self.image_format
+            success, buf = cv2.imencode(ext, vis_img)
+            if success:
+                data = buf.tobytes()
+                def _write_bytes(path, b):
+                    try:
+                        with open(path, 'wb') as fh:
+                            fh.write(b)
+                    except Exception:
+                        self.logger.exception(f"Failed to write image {path}")
+                self._io_executor.submit(_write_bytes, vis_path, data)
+            else:
+                # fallback to synchronous write
+                cv2.imwrite(vis_path, vis_img)
+        except Exception:
+            self.logger.exception("Failed to encode/write visualization image")
         # cv2.imwrite(vis_path, vis_result)
 
     def _draw_projection_overlay(self, vis_img, packet: FramePacket, opt_rec: dict):
@@ -257,23 +279,25 @@ class VisualizeThread(threading.Thread):
 
         try:
             frames = [r['frame_id'] for r in self.frame_records]
-            self._plot_transform_history(frames, self.frame_records, 'robot_pose', 'Robot base pose', 'robot_pose')
-            self._plot_comparison_history(
-                frames,
-                self.frame_records,
-                'cMo',
-                ['cMo_optimized', 'cMo_pnp'],
-                'Camera pose',
-                'cMo_comparison',
-            )
-            self._plot_comparison_history(
-                frames,
-                self.frame_records,
-                'bMo',
-                ['bMo_optimized', 'bMo_pnp'],
-                'Body pose',
-                'bMo_comparison',
-            )
+            # matplotlib is not thread-safe; protect plotting with a lock
+            with self._plot_lock:
+                self._plot_transform_history(frames, self.frame_records, 'robot_pose', 'Robot base pose', 'robot_pose')
+                self._plot_comparison_history(
+                    frames,
+                    self.frame_records,
+                    'cMo',
+                    ['cMo_optimized', 'cMo_pnp'],
+                    'Camera pose',
+                    'cMo_comparison',
+                )
+                self._plot_comparison_history(
+                    frames,
+                    self.frame_records,
+                    'bMo',
+                    ['bMo_optimized', 'bMo_pnp'],
+                    'Body pose',
+                    'bMo_comparison',
+                )
         except Exception:
             self.logger.exception("Failed to save plots")
 
@@ -400,5 +424,19 @@ class VisualizeThread(threading.Thread):
                     self.in_q.task_done()
                 except Exception:
                     pass
+        # thread is exiting (stop_event set or break): ensure CSV/plots are saved
+        try:
+            self._save_csv_records()
+        except Exception:
+            self.logger.exception("Failed to save CSV records on exit")
+        try:
+            self._save_plots()
+        except Exception:
+            self.logger.exception("Failed to save plots on exit")
 
+        # shutdown IO executor
+        try:
+            self._io_executor.shutdown(wait=True)
+        except Exception:
+            pass
         self.logger.info("VisualizeThread exited cleanly")
