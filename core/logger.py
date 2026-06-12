@@ -1,4 +1,5 @@
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -63,8 +64,10 @@ def setup_logger(
         encoding="utf-8",
     )
 
-    # 文件记录 DEBUG+
-    file_handler.setLevel(logging.DEBUG)
+    # 文件记录级别由环境变量控制（方便临时提高/降低日志量）
+    file_level_name = os.environ.get("PIPELINE_FILE_LOG_LEVEL", "DEBUG").upper()
+    file_level = getattr(logging, file_level_name, logging.DEBUG)
+    file_handler.setLevel(file_level)
     file_handler.setFormatter(formatter)
 
     root.addHandler(console_handler)

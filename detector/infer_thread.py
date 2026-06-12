@@ -95,6 +95,7 @@ class InferThread(threading.Thread):
                 packet = self.in_q.get(timeout=0.1)
             except queue.Empty:
                 continue
+            t_received_ns = time.perf_counter_ns()
 
             try:
                 # Handle abnormal upstream packet
@@ -117,11 +118,11 @@ class InferThread(threading.Thread):
                     continue
 
                 # Run inference with TRT model
-                t0 = time.perf_counter_ns()
+                t_proc0 = time.perf_counter_ns()
                 roi, keypoints = getInfer(self.model, packet.image)
-                infer_cost_ms = (time.perf_counter_ns() - t0) / 1e6
-                self.logger.debug(
-                    f"Inference cost: {infer_cost_ms:.4f} ms")
+                infer_cost_ms = (time.perf_counter_ns() - t_proc0) / 1e6
+                total_proc_ms = (time.perf_counter_ns() - t_received_ns) / 1e6
+                self.logger.debug("Inference cost: %.4f ms (total since recv: %.4f ms)", infer_cost_ms, total_proc_ms)
                 packet.timing['infer'] = infer_cost_ms
                 
                 if roi is None or keypoints is None:
@@ -136,7 +137,10 @@ class InferThread(threading.Thread):
                 packet.keypoints = keypoints
 
                 # Put results in output queue
+                t_put0 = time.perf_counter_ns()
                 self._put_packet(packet)
+                put_cost_ms = (time.perf_counter_ns() - t_put0) / 1e6
+                self.logger.debug("Infer put_cost_ms: %.4f ms", put_cost_ms)
 
             except Exception as e:
                 self.logger.exception(

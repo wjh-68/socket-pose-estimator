@@ -214,6 +214,7 @@ class VisualizeThread(threading.Thread):
             self.logger.debug('skip projection overlay')
 
     def _process_packet(self, packet: FramePacket):
+        t_proc0 = time.perf_counter_ns()
         self._validate_packet(packet)
         pnp_rec = self._build_pnp_record(packet)
         opt_rec = self._build_opt_record(packet)
@@ -227,6 +228,9 @@ class VisualizeThread(threading.Thread):
             self._render_and_save_image(packet, opt_rec)
         except Exception:
             self.logger.exception("Failed to render/save visualization image")
+
+        proc_cost_ms = (time.perf_counter_ns() - t_proc0) / 1e6
+        self.logger.debug("Visualize process cost: %.4f ms", proc_cost_ms)
 
         return packet
 
@@ -384,7 +388,10 @@ class VisualizeThread(threading.Thread):
                     self.logger.info("received EOF packet, visualizer exiting")
                     break
 
+                t_recv_ns = time.perf_counter_ns()
                 packet = self._process_packet(packet)
+                total_ms = (time.perf_counter_ns() - t_recv_ns) / 1e6
+                self.logger.debug("Visualize total since recv: %.4f ms", total_ms)
 
             except Exception:
                 self.logger.exception("Unexpected exception in VisualizeThread")

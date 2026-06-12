@@ -13,3 +13,5 @@ venv310/**
 logs/**
 .venv/**
 .vscode/**
+test_camera.py
+test_
