@@ -42,6 +42,28 @@ class VisualizeThread(threading.Thread):
         self._io_executor = ThreadPoolExecutor(max_workers=2)
         # lock for matplotlib operations (not thread-safe)
         self._plot_lock = threading.Lock()
+        # finalized flag to ensure single shutdown/save
+        self._finalized = False
+
+    def _finalize(self):
+        if self._finalized:
+            return
+        self._finalized = True
+        # shutdown IO executor first so image files are flushed
+        try:
+            self._io_executor.shutdown(wait=True)
+        except Exception:
+            self.logger.exception("Failed to shutdown IO executor during finalize")
+
+        try:
+            self._save_csv_records()
+        except Exception:
+            self.logger.exception("Failed to save CSV records during finalize")
+
+        try:
+            self._save_plots()
+        except Exception:
+            self.logger.exception("Failed to save plots during finalize")
 
     def _put_packet(self, packet: FramePacket):
         if self.queue_cfg.drop_oldest:
@@ -406,10 +428,9 @@ class VisualizeThread(threading.Thread):
                     continue
 
                 if getattr(packet, 'eof', False):
-                    # save results and exit
-                    self._save_csv_records()
-                    self._save_plots()
+                    # received EOF: finalise and exit loop
                     self.logger.info("received EOF packet, visualizer exiting")
+                    self._finalize()
                     break
 
                 t_recv_ns = time.perf_counter_ns()
@@ -424,19 +445,9 @@ class VisualizeThread(threading.Thread):
                     self.in_q.task_done()
                 except Exception:
                     pass
-        # thread is exiting (stop_event set or break): ensure CSV/plots are saved
+        # thread is exiting (stop_event set or break): ensure finalization
         try:
-            self._save_csv_records()
+            self._finalize()
         except Exception:
-            self.logger.exception("Failed to save CSV records on exit")
-        try:
-            self._save_plots()
-        except Exception:
-            self.logger.exception("Failed to save plots on exit")
-
-        # shutdown IO executor
-        try:
-            self._io_executor.shutdown(wait=True)
-        except Exception:
-            pass
+            self.logger.exception("Failed during finalization on exit")
         self.logger.info("VisualizeThread exited cleanly")
