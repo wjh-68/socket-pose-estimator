@@ -13,12 +13,12 @@ data_source:
     robot_port: 30004
     robot_login_name: "aubo"
     robot_password: "123456"
-    sync_tolerance_ms: 50.0
+    sync_tolerance_ms: 20.0
 
 data_reader:
   queue_config:
     maxsize: 10
-    drop_oldest: false
+    drop_oldest: true
     put_timeout: 0.2
 
 infer:
@@ -30,7 +30,7 @@ infer:
   iou_threshold: 0.45
   queue_config:
     maxsize: 10
-    drop_oldest: false
+    drop_oldest: true
     put_timeout: 0.2
 
 refine:
@@ -38,7 +38,7 @@ refine:
   num_keypoints: 7
   queue_config:
     maxsize: 10
-    drop_oldest: false
+    drop_oldest: true
     put_timeout: 0.2
 
 pose_estimator:
@@ -72,7 +72,7 @@ pose_estimator:
       adaptive_multiplier: 2.0
       min_inliers: 4
       max_translation: 10.0
-      max_rotation_deg: 10.0
+      max_rotation_deg: 20.0
     optimizer:
       prior_sigmas: 
         - 0.08726646259971647
@@ -125,7 +125,7 @@ visualization:
       - [8.0, -13.9, 0.0]
   queue_config:
     maxsize: 10
-    drop_oldest: false
+    drop_oldest: true
     put_timeout: 0.2
 
 queues:

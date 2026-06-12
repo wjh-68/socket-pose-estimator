@@ -1,0 +1,119 @@
+import threading
+import time
+import yaml
+from queue import Queue
+from core.logger import setup_logger, get_logger
+from data_source.factory import build_datasource
+from data_reader.data_reader_thread \
+    import DataReaderThread, DataReaderThreadConfig
+from detector.infer_thread \
+    import InferThread, InferThreadConfig
+from detector.refine_thread \
+    import RefineThread, RefineThreadConfig
+from pose_estimator.pose_estimator_thread \
+    import PoseEstimatorThread, PoseEstimatorThreadConfig
+from config.visualization_config import VizCameraConfig, VizObjectModelConfig
+# from core.queues import create_queues
+from config.app_config import AppConfig
+from config.data_source_config import DataSourceConfig
+
+def main():
+
+    setup_logger()
+    logger = get_logger("test_online")
+    logger.info("pipeline start")
+    
+    app_cfg = AppConfig.from_yaml(
+        "config/online_test.yaml")
+    stop_event = threading.Event()
+    data_source = build_datasource(
+        app_cfg.data_source,stop_event)
+
+    queues = {
+        "raw_queue": Queue(maxsize=10),
+        "infered_queue": Queue(maxsize=10),
+        "refined_queue": Queue(maxsize=10),
+        "result_queue": Queue(maxsize=10),
+    }
+    
+    # Threads
+    data_reader_thread = DataReaderThread(
+        data_source,
+        queues["raw_queue"],
+        stop_event,
+        app_cfg.data_reader,
+    )
+
+    infer_thread = InferThread(
+        queues["raw_queue"],
+        queues["infered_queue"],
+        stop_event,
+        app_cfg.infer,
+    )
+
+    refine_thread = RefineThread(
+        queues["infered_queue"],
+        queues["refined_queue"],
+        stop_event,
+        app_cfg.refine,
+    )
+    
+    pose_estimator_thread = PoseEstimatorThread(
+        queues["refined_queue"],
+        queues["result_queue"],
+        stop_event,
+        app_cfg.pose_estimator,
+    )
+    
+    # Start threads
+    data_reader_thread.start()
+    infer_thread.start()
+    refine_thread.start()
+    pose_estimator_thread.start()
+
+    # visualization thread (optional)
+    vis_thread = None
+    try:
+        if hasattr(app_cfg, "visualization") and app_cfg.visualization is not None:
+            viz_cfg = app_cfg.visualization
+            pose_cfg = app_cfg.pose_estimator.pose_estimator_cfg
+            if getattr(viz_cfg, 'camera', None) is None:
+                viz_cfg.camera = VizCameraConfig(
+                    K=pose_cfg.camera.K,
+                    dist=pose_cfg.camera.dist,
+                    eMc=pose_cfg.camera.eMc,
+                )
+            if getattr(viz_cfg, 'object_model', None) is None:
+                viz_cfg.object_model = VizObjectModelConfig(
+                    obj_pts=pose_cfg.object_model.obj_pts,
+                )
+            from visualization.visualize_thread import VisualizeThread
+            vis_thread = VisualizeThread(queues["result_queue"], stop_event, viz_cfg)
+            vis_thread.start()
+        else:
+            logger.info("No visualization config; visualization not started")
+    except Exception:
+        logger.exception("Visualization thread failed to start")
+
+
+    # Wait for user to interrupt
+    try:
+        while True:
+            time.sleep(0.3)
+    except KeyboardInterrupt:
+        stop_event.set()
+
+    # Join threads
+    data_reader_thread.join()
+    infer_thread.join()
+    refine_thread.join()
+    pose_estimator_thread.join()
+    if vis_thread is not None:
+        vis_thread.join()
+    
+
+    logger.info("Shutdown complete")
+
+
+if __name__ == "__main__":
+    main()
