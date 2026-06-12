@@ -77,22 +77,58 @@ class VirtualDataSource(BaseDataSource):
                 base = os.path.splitext(npy)[0]
                 img_candidates = [f for f in files if f.startswith(base) and f.lower().endswith(('.jpg', '.png'))]
                 img_path = img_candidates[0] if img_candidates else None
+                # try parse timestamp from filename suffix, e.g. YYYY-MM-DD_HH_MM_SS_<ts>
+                ts_ns = None
+                try:
+                    base_parts = base.split("_")
+                    last = base_parts[-1]
+                    if last.isdigit():
+                        ts_ns = int(last)
+                except Exception:
+                    ts_ns = None
+
                 rec = {
                     'frame_id': i,
                     'image_path': img_path,
                     'npy_path': npy,
                     'pose_matrix_4x4': None,
+                    'camera_timestamp_ns': ts_ns,
+                    'pose_timestamp_ns': ts_ns,
                 }
                 # normalize pose content if possible
                 if arr is not None:
-                    a = np.array(arr)
-                    if a.size == 16:
-                        rec['pose_matrix_4x4'] = a.reshape((4, 4)).tolist()
-                    elif a.shape == (4, 4):
-                        rec['pose_matrix_4x4'] = a.tolist()
-                    else:
-                        # fallback: store raw array
-                        rec['pose_matrix_4x4'] = a.tolist() if hasattr(a, 'tolist') else None
+                    # if arr is a dict-like (from allow_pickle), try extract timestamps/pose
+                    try:
+                        a = np.array(arr)
+                    except Exception:
+                        a = arr
+
+                    # if arr contains pose matrix directly
+                    try:
+                        if isinstance(a, (list, tuple, np.ndarray)):
+                            aa = np.array(a)
+                            if aa.size == 16:
+                                rec['pose_matrix_4x4'] = aa.reshape((4, 4)).tolist()
+                            elif aa.shape == (4, 4):
+                                rec['pose_matrix_4x4'] = aa.tolist()
+                    except Exception:
+                        pass
+
+                    # if arr is a dict with timestamps or pose
+                    try:
+                        if hasattr(arr, 'item'):
+                            val = arr.item()
+                        else:
+                            val = arr
+                        if isinstance(val, dict):
+                            if 'camera_timestamp_ns' in val:
+                                rec['camera_timestamp_ns'] = int(val['camera_timestamp_ns'])
+                            if 'pose_timestamp_ns' in val:
+                                rec['pose_timestamp_ns'] = int(val['pose_timestamp_ns'])
+                            if 'pose_matrix_4x4' in val:
+                                rec['pose_matrix_4x4'] = val['pose_matrix_4x4']
+                    except Exception:
+                        pass
                 records.append(rec)
             self.records = records
 
@@ -172,11 +208,12 @@ class VirtualDataSource(BaseDataSource):
                 img_path = os.path.join(self.base_path, img_rel)
                 img = cv2.imread(img_path)
             else:
-                # no image for this record
                 img = None
             if img is None:
                 self.logger.debug(f"Image missing or failed to read for record {self._cam_index}")
-            ts = int(time.perf_counter_ns())
+
+            # use recorded timestamp when available, otherwise fall back to system time
+            ts = rec.get('camera_timestamp_ns') or int(time.perf_counter_ns())
             with self.camera_lock:
                 self.camera_data = (ts, img)
             self._cam_index += 1
@@ -215,10 +252,11 @@ class VirtualDataSource(BaseDataSource):
                     except Exception:
                         mat = None
 
-            ts = int(time.perf_counter_ns())
+            # use recorded pose timestamp when available, otherwise system time
+            pose_ts = rec.get('pose_timestamp_ns') or int(time.perf_counter_ns())
             if mat is not None:
                 with self.robot_lock:
-                    self.robot_buffer.append((ts, mat))
+                    self.robot_buffer.append((pose_ts, mat))
             self._robot_index += 1
             if self._robot_index >= n:
                 if self._loop:
