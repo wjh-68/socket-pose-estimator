@@ -19,10 +19,21 @@ class OnlineDataSourceConfig:
     robot_login_name: str = "aubo"
     robot_password: str = "123456"
 
+
+@dataclass(slots=True)
+class VirtualDataSourceConfig:
+    dataset_path: str
+    camera_rate_hz: float = 20.0
+    robot_rate_hz: float = 50.0
+    loop: bool = True
+    sync_tolerance_ms: float = 20.0
+
 @dataclass(slots=True)
 class DataSourceConfig:
     mode: str
 
-    offline: OfflineDataSourceConfig
+    offline: OfflineDataSourceConfig | None = None
 
-    online: OnlineDataSourceConfig
+    online: OnlineDataSourceConfig | None = None
+
+    virtual: VirtualDataSourceConfig | None = None

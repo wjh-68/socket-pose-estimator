@@ -1,0 +1,125 @@
+data_source:
+  mode: virtual
+  virtual:
+    dataset_path: dataset/0515
+    camera_rate_hz: 20.0
+    robot_rate_hz: 50.0
+    loop: true
+    sync_tolerance_ms: 20.0
+
+data_reader:
+  queue_config:
+    maxsize: 10
+    drop_oldest: true
+    put_timeout: 0.2
+
+infer:
+  engine_path: checkpoint/best.engine
+  class_names:
+    - object
+  num_keypoints: 7
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  queue_config:
+    maxsize: 10
+    drop_oldest: true
+    put_timeout: 0.2
+
+refine:
+  max_workers: 4
+  num_keypoints: 7
+  queue_config:
+    maxsize: 10
+    drop_oldest: true
+    put_timeout: 0.2
+
+pose_estimator:
+  pose_estimator_cfg:
+    window_size: 5
+    camera:
+      K:
+        - [1359.1199645944478, 0., 640.5413255682381]
+        - [0., 1359.1199645944478, 362.0060535184404]
+        - [0., 0., 1. ]
+      dist: 
+        - [-0.11507587466685387, 0.28954640142800997, 0.002523795531233719, -0.0003497505689869382, -0.09376904287478781]
+      eMc:
+        - [-0.72849429, 0.6850518, -0.00030797155, -63.927837]
+        - [-0.68492085, -0.72834611, 0.019882789, 60.05452]
+        - [0.01339643, 0.01469543, 0.99980229, -173.91582]
+        - [0., 0., 0., 1.]
+
+    object_model:
+      obj_pts:
+        - [-8.0, 11.2, 0.0]
+        - [8.0, 11.2, 0.0]
+        - [-16.0, 0.0, 0.0]
+        - [0.0, 0.0, 0.0]
+        - [16.0, 0.0, 0.0]
+        - [-8.0, -13.9, 0.0]
+        - [8.0, -13.9, 0.0]
+    tracker:
+      use_adaptive_threshold: true
+      reproj_error_threshold: 1.0
+      adaptive_multiplier: 2.0
+      min_inliers: 4
+      max_translation: 10.0
+      max_rotation_deg: 20.0
+    optimizer:
+      prior_sigmas: 
+        - 0.08726646259971647
+        - 0.08726646259971647
+        - 0.017453292519943295
+        - 0.5
+        - 0.5
+        - 10.0
+      point_sigmas: 
+        - 1.5
+        - 1.5
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+        - 1.0
+  queue_cfg:
+    maxsize: 10
+    drop_oldest: true
+    put_timeout: 0.2
+
+visualization:
+  result_dir: "result/mt_online/virtual_test"
+  save_images: true
+  save_csv: true
+  save_plots: true
+  image_format: "png"
+  camera:
+    K:
+      - [1359.1199645944478, 0., 640.5413255682381]
+      - [0., 1359.1199645944478, 362.0060535184404]
+      - [0., 0., 1. ]
+    dist: 
+      - [-0.11507587466685387, 0.28954640142800997, 0.002523795531233719, -0.0003497505689869382, -0.09376904287478781]
+    eMc:
+      - [-0.72849429, 0.6850518, -0.00030797155, -63.927837]
+      - [-0.68492085, -0.72834611, 0.019882789, 60.05452]
+      - [0.01339643, 0.01469543, 0.99980229, -173.91582]
+      - [0., 0., 0., 1.]
+  object_model:
+    obj_pts:
+      - [-8.0, 11.2, 0.0]
+      - [8.0, 11.2, 0.0]
+      - [-16.0, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+      - [16.0, 0.0, 0.0]
+      - [-8.0, -13.9, 0.0]
+      - [8.0, -13.9, 0.0]
+  queue_config:
+    maxsize: 10
+    drop_oldest: true
+    put_timeout: 0.2
+
+queues:
+  raw_queue: 10
+  infered_queue: 10
+  refined_queue: 10
+  result_queue: 10
