@@ -110,6 +110,9 @@ class OnlineDataSource(BaseDataSource):
         self.robot_thread.start()
         self.logger.info("OnlineDataSource started")
 
+        # track last consumed camera timestamp to avoid returning the same frame repeatedly
+        self._last_camera_ts = -1
+
         self.state = DataSourceState.RUNNING
 
     def stop(self):
@@ -135,8 +138,14 @@ class OnlineDataSource(BaseDataSource):
     def get_packet(self)->Optional[FramePacket]:
         with self.camera_lock:
             camera_data = self.camera_data
-        if camera_data.data is None:
-            return None
+            # if no image yet
+            if camera_data.data is None:
+                return None
+            # avoid returning the same camera frame repeatedly
+            if getattr(self, '_last_camera_ts', None) == camera_data.timestamp_ns:
+                return None
+            # mark this timestamp as consumed
+            self._last_camera_ts = camera_data.timestamp_ns
         robot_data, time_diff_ns = \
             self._find_closest_robot_data(
                 camera_data.timestamp_ns)
@@ -152,9 +161,9 @@ class OnlineDataSource(BaseDataSource):
         packet = FramePacket(
             frame_id=self.frame_id,
             timestamp = camera_data.timestamp_ns,
-            image =camera_data.data,
-            robot_pose=robot_data.data,
-            sync_error_ms=time_diff_ms,
+            image = camera_data.data,
+            robot_pose = robot_data.data,
+            sync_error_ms = time_diff_ms,
         )
         self.frame_id += 1
 
