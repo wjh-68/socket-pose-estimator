@@ -85,34 +85,43 @@ class RefineThread(threading.Thread):
         finding the best fit points. This is a placeholder implementation.
         """
         try:
+            t_ext0 = time.perf_counter_ns()
             sub_roi_imgs, tls = self._extract_sub_roi(image, keypoints)
+            extract_cost_ms = (time.perf_counter_ns() - t_ext0) / 1e6
         except Exception:
             self.logger.error(
                 "Failed to extract sub-ROIs for refinement")
             raise
-        t0 = time.perf_counter_ns()
+
         self.cnt_process_total += 1
-        # refine points in serial
-        t0 = time.perf_counter_ns()
-        results = list([detect_and_refine_ellipses(img) for img in sub_roi_imgs])
-        refine_serial_cost_ms = (time.perf_counter_ns() - t0) / 1e6
-        self.logger.debug(
-            f"refine_serial_cost_ms: {refine_serial_cost_ms:.2f}ms")
-        # # refine points in parallel
-        # t0 = time.perf_counter_ns()
-        # results = list(self.executor.map(
-        #     detect_and_refine_ellipses, sub_roi_imgs))
-        # refine_parallel_cost_ms = \
-        #     (time.perf_counter_ns() - t0) / 1e6
-        # self.logger.debug(
-        #     f"refine_parallel_cost_ms: {refine_parallel_cost_ms:.2f}ms")    
-        refined_pts = []
+        # refine points in parallel using executor
+        t_det0 = time.perf_counter_ns()
+        try:
+            results = list(self.executor.map(detect_and_refine_ellipses, sub_roi_imgs))
+            refine_parallel_cost_ms = (time.perf_counter_ns() - t_det0) / 1e6
+            self.logger.debug("refine_parallel_cost_ms: %.2fms", refine_parallel_cost_ms)
+        except Exception:
+            # fallback to serial if parallel map fails
+            t_det0 = time.perf_counter_ns()
+            results = list([detect_and_refine_ellipses(img) for img in sub_roi_imgs])
+            refine_serial_cost_ms = (time.perf_counter_ns() - t_det0) / 1e6
+            self.logger.debug("refine_serial_cost_ms: %.2fms", refine_serial_cost_ms)
+        # post-processing (convert results to original image coords)
+        t_post0 = time.perf_counter_ns()
+        num_kp = self.cfg.num_keypoints
+        refined_arr = np.empty((num_kp, 2), dtype=float)
+        refined_arr[:] = np.nan
         for i, res in enumerate(results):
             if res is not None:
                 # convert to original image coordinates
-                refined_pts.append(res['p']+tls[i])
-        
-        return np.asarray(refined_pts)
+                refined_arr[i, :] = (res['p'] + tls[i])
+
+        postprocess_cost_ms = (time.perf_counter_ns() - t_post0) / 1e6
+        self.logger.debug(
+            "refine_postprocess_cost_ms: %.2fms, extract_cost_ms: %.2fms",
+            postprocess_cost_ms, extract_cost_ms)
+
+        return refined_arr
 
     def process(self, packet:FramePacket):
         self._validate_packet(packet)

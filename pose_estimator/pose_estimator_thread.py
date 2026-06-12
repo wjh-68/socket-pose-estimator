@@ -81,6 +81,7 @@ class PoseEstimatorThread(threading.Thread):
                 continue
 
             try:
+                t_received_ns = time.perf_counter_ns()
                 # Handle abnormal upstream packet
                 if packet is None:
                     self.logger.warning(
@@ -95,7 +96,11 @@ class PoseEstimatorThread(threading.Thread):
                     break   # finally block will be executed before breaking
                 
                 # Process packet from upstream
+                t_proc0 = time.perf_counter_ns()
                 packet = self._process_packet(packet)
+                proc_cost_ms = (time.perf_counter_ns() - t_proc0) / 1e6
+                total_since_recv_ms = (time.perf_counter_ns() - t_received_ns) / 1e6
+                self.logger.debug("Pose process cost: %.4f ms (total since recv: %.4f ms)", proc_cost_ms, total_since_recv_ms)
 
                 # Handle failed packet processing
                 if packet is None:

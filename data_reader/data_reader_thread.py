@@ -37,9 +37,11 @@ class DataReaderThread(threading.Thread):
 
                 # Online Mode: wait when no data is available
                 if packet is None:
+                    # self.logger.info(
+                    #     "Data source returned None, skipping")
                     self.logger.info(
                         "Data source returned None, waiting")
-                    time.sleep(0.005)  # Wait before retrying
+                    time.sleep(0.02)  # Wait before retrying
                     continue
                 
                 packet.timing['read_data'] = read_cost_ms
