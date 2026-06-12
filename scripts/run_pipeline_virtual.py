@@ -10,35 +10,7 @@ from detector.infer_thread import InferThread
 from config.app_config import AppConfig
 
 
-class DummyInferThread(threading.Thread):
-    def __init__(self, in_q, out_q, stop_event, cfg):
-        super().__init__(name="DummyInfer", daemon=True)
-        self.in_q = in_q
-        self.out_q = out_q
-        self.stop_event = stop_event
-        self.cfg = cfg
-        self.logger = get_logger("dummy_infer")
-
-    def run(self):
-        while not self.stop_event.is_set():
-            try:
-                pkt = self.in_q.get(timeout=0.1)
-            except Exception:
-                continue
-            if pkt is None:
-                continue
-            if pkt.image is None:
-                continue
-            # create fake keypoints: num_keypoints x 2
-            import numpy as np
-            kps = np.zeros((self.cfg.num_keypoints, 2), dtype=float)
-            h, w = pkt.image.shape[:2] if pkt.image is not None else (720, 1280)
-            for i in range(self.cfg.num_keypoints):
-                kps[i] = [w*(i+1)/(self.cfg.num_keypoints+1), h/2]
-            pkt.keypoints = kps
-            pkt.roi = [0, 0, w, h]
-            self.out_q.put(pkt)
-            self.in_q.task_done()
+# DummyInferThread removed; script now requires real `InferThread` (TRT)
 
 
 def main(config_path="config/online_test_virtual.yaml", run_time=8):
@@ -57,16 +29,8 @@ def main(config_path="config/online_test_virtual.yaml", run_time=8):
     # DataReaderThread expects datasource, out_q, stop_event, cfg
     data_reader = DataReaderThread(ds, queues["raw_queue"], stop_event, cfg_obj.data_reader)
 
-    # Infer thread, fallback to dummy if GPU libs missing
-    try:
-        # try import to see if GPU backend available
-        import pycuda
-        infer = InferThread(queues["raw_queue"], queues["infer_queue"], stop_event, cfg_obj.infer)
-    except Exception:
-        logger.warning("pycuda not available, using DummyInferThread")
-        from types import SimpleNamespace
-        infer_cfg = cfg_obj.infer
-        infer = DummyInferThread(queues["raw_queue"], queues["infer_queue"], stop_event, infer_cfg)
+    # Infer thread (expects TRT + pycuda available)
+    infer = InferThread(queues["raw_queue"], queues["infer_queue"], stop_event, cfg_obj.infer)
 
     refine = RefineThread(queues["infer_queue"], queues["refine_queue"], stop_event, cfg_obj.refine)
 
