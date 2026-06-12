@@ -94,19 +94,18 @@ class RefineThread(threading.Thread):
             raise
 
         self.cnt_process_total += 1
-        # refine points in serial (detection)
+        # refine points in parallel using executor
         t_det0 = time.perf_counter_ns()
-        results = list([detect_and_refine_ellipses(img) for img in sub_roi_imgs])
-        refine_serial_cost_ms = (time.perf_counter_ns() - t_det0) / 1e6
-        self.logger.debug("refine_serial_cost_ms: %.2fms", refine_serial_cost_ms)
-        # # refine points in parallel
-        # t0 = time.perf_counter_ns()
-        # results = list(self.executor.map(
-        #     detect_and_refine_ellipses, sub_roi_imgs))
-        # refine_parallel_cost_ms = \
-        #     (time.perf_counter_ns() - t0) / 1e6
-        # self.logger.debug(
-        #     f"refine_parallel_cost_ms: {refine_parallel_cost_ms:.2f}ms")    
+        try:
+            results = list(self.executor.map(detect_and_refine_ellipses, sub_roi_imgs))
+            refine_parallel_cost_ms = (time.perf_counter_ns() - t_det0) / 1e6
+            self.logger.debug("refine_parallel_cost_ms: %.2fms", refine_parallel_cost_ms)
+        except Exception:
+            # fallback to serial if parallel map fails
+            t_det0 = time.perf_counter_ns()
+            results = list([detect_and_refine_ellipses(img) for img in sub_roi_imgs])
+            refine_serial_cost_ms = (time.perf_counter_ns() - t_det0) / 1e6
+            self.logger.debug("refine_serial_cost_ms: %.2fms", refine_serial_cost_ms)
         # post-processing (convert results to original image coords)
         t_post0 = time.perf_counter_ns()
         num_kp = self.cfg.num_keypoints
