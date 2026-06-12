@@ -45,7 +45,7 @@ def main(config_path="config/online_test_virtual.yaml", run_time=8):
     cfg_dict = yaml.safe_load(open(config_path))
     cfg_obj = AppConfig.from_yaml(config_path)
 
-    setup_logger("pipeline")
+    setup_logger()
     logger = get_logger("pipeline")
 
     stop_event = threading.Event()

@@ -1,3 +1,7 @@
+# 添加系统路径
+import sys
+sys.path.append("../socket-pose-estimator")
+
 import threading
 import time
 from config.app_config import AppConfig
