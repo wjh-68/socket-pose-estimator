@@ -175,9 +175,9 @@ class OnlineDataSource(BaseDataSource):
                     self.camera_data.timestamp_ns = ts
             except Exception as e:
                 self.logger.error(f"Error reading camera: {e}")
-                time.sleep(0.1)
+                time.sleep(0.02)
                 continue
-            time.sleep(0.05)  # 20Hz sampling
+            time.sleep(0.1)  # 20Hz sampling
         self.logger.info("Camera thread exited")
 
     def _read_robot_loop(self):
@@ -193,9 +193,9 @@ class OnlineDataSource(BaseDataSource):
             except Exception as e:
                 self.logger.error(
                     f"Error reading robot pose: {e}")
-                time.sleep(0.05)
+                time.sleep(0.02)
                 continue
-            time.sleep(0.02)  # 50Hz sampling
+            time.sleep(0.05)  # 50Hz sampling
         self.logger.info("Robot thread exited")
 
     def _find_closest_robot_data(self, camera_ts_ns):

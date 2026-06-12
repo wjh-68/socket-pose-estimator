@@ -145,6 +145,8 @@ def refine_ellipse(raw_ellipses):
                 cluster_.append({'c': e['c'],'d':e['d'],'r':e['r'],'a':e['a'],'b':e['b'],'id':i,'angle':e['angle']})
             filter_dict = filter_concentric_ellipses(cluster_,3)
             # sort_cluster = sorted(cluster, key=lambda x: x['d'])
+            if filter_dict[0] is None:
+                continue
             id_list = [filter_dict[0]['id_i'],filter_dict[0]['id_j']]
             itemij = [x for x in cluster_ if x['id'] in id_list]
 
