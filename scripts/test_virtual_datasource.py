@@ -17,10 +17,15 @@ def main():
         print("initialize:", ok)
         ds.start()
         # read a few packets
-        for i in range(10):
+        time.sleep(1)
+        for i in range(10000000):
             pkt = ds.get_packet()
-            print(f"packet {i}:", "ok" if pkt is not None else "None")
-            time.sleep(0.05)
+            # print(f"packet {i}:", "ok" if pkt is not None else "None")
+            # print timestamp
+            if pkt is not None:
+                print(f"timestamp(ms): {pkt.timestamp}")
+                print(f"sys timestamp(ms): {time.perf_counter()*1e3}")
+            # time.sleep(0.05)
     finally:
         stop_event.set()
         ds.stop()
