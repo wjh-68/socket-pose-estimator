@@ -2,8 +2,8 @@ data_source:
   mode: virtual
   virtual:
     dataset_path: dataset/0515
-    camera_rate_hz: 20.0
-    robot_rate_hz: 50.0
+    camera_rate_hz: 10.0
+    robot_rate_hz: 20.0
     loop: true
     sync_tolerance_ms: 20.0
 
