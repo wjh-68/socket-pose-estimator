@@ -144,6 +144,9 @@ class VirtualDataSource(BaseDataSource):
         self._cam_index = 0
         self._robot_index = 0
 
+        # track last returned camera timestamp to avoid duplicate consumption
+        self._last_camera_ts = None
+
         self.state = "INITIALIZED"
         return True
 
@@ -174,7 +177,10 @@ class VirtualDataSource(BaseDataSource):
             camera_data = self.camera_data
         if camera_data is None:
             return None
-
+        # avoid returning the same camera frame repeatedly
+        cam_ts = camera_data[0]
+        if self._last_camera_ts is not None and cam_ts == self._last_camera_ts:
+            return None
         robot_data, time_diff_ns = self._find_closest_robot_data(camera_data[0])
         if robot_data is None or time_diff_ns is None:
             return None
@@ -193,6 +199,7 @@ class VirtualDataSource(BaseDataSource):
             sync_error_ms=time_diff_ms,
         )
         self.frame_id += 1
+        self._last_camera_ts = cam_ts
         return packet
 
     def _publish_camera_loop(self):
