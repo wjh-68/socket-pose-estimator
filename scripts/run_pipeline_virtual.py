@@ -2,6 +2,7 @@
 import sys
 sys.path.append("../socket-pose-estimator")
 import threading
+import os
 import time
 import yaml
 from core.logger import setup_logger, get_logger
@@ -27,6 +28,12 @@ def main(config_path="config/online_test_virtual.yaml", run_time=8):
 
     stop_event = threading.Event()
     queues = create_queues(cfg_dict)
+
+    # optional: disable visualizer disk I/O for testing via env var
+    if os.environ.get("DISABLE_VIS_IO") == "1":
+        cfg_obj.visualization.save_images = False
+        cfg_obj.visualization.save_csv = False
+        cfg_obj.visualization.save_plots = False
 
     # build datasource
     ds = build_datasource(cfg_obj.data_source, stop_event)
